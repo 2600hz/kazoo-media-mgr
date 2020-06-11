@@ -35,7 +35,27 @@
                      {'true', 'local'} |
                      {'true', 'other', kz_term:ne_binary()}.
 
--type state() :: map().
+-type state() :: #{queue => kz_term:ne_binary()
+                  ,is_consuming => boolean()
+                  }.
+
+-type store_info() :: #{url => kz_term:ne_binary()
+                       ,media => kz_recording:media()
+                       ,extension => kz_term:ne_binary()
+                       ,doc_id => kz_term:ne_binary()
+                       ,doc_db => kz_term:ne_binary()
+                       ,cdr_id => kz_term:ne_binary()
+                       ,interaction_id => kz_term:ne_binary()
+                       ,should_store => store_url()
+                       ,retries => non_neg_integer()
+                       ,verb => kz_term:ne_binary()
+                       ,account_id => kz_term:ne_binary()
+                       ,endpoint_id => kz_term:ne_binary()
+                       ,call_id => kz_term:ne_binary()
+                       ,event => kz_call_event:doc()
+                       ,origin => kz_term:ne_binary()
+                       ,pid => pid()
+                       }.
 
 -define(STORAGE_RETRY_TIMES(AccountId)
        ,kz_media_config:storage_retry_times(AccountId)
@@ -67,10 +87,10 @@ start_link() ->
                            ).
 
 -spec handle_record_stop(kz_json:object(), kz_term:proplist()) -> 'ok'.
-handle_record_stop(JObj, Props) ->
-    kz_log:put_callid(JObj),
+handle_record_stop(RecordStop, Props) ->
+    kz_log:put_callid(RecordStop),
     Pid = props:get_value('server', Props),
-    maybe_save_recording(Pid, JObj).
+    maybe_save_recording(Pid, RecordStop).
 
 -spec init([]) -> {'ok', state()}.
 init([]) ->
@@ -215,8 +235,8 @@ store_recording_meta(#{media := {_, MediaName}
                      ]
                     ),
 
-    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', <<"call_recording">>}]),
-    case kazoo_modb:save_doc(Db, MediaDoc, [{ensure_saved, true}]) of
+    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
+    case kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
@@ -227,28 +247,28 @@ store_recording_meta(#{media := {_, MediaName}
 maybe_store_recording_meta(#{doc_db := Db
                             ,doc_id := DocId
                             }=State) ->
-    case kz_datamgr:lookup_doc_rev(Db, {<<"call_recording">>, DocId}) of
+    case kz_datamgr:lookup_doc_rev(Db, {kzd_call_recordings:type(), DocId}) of
         {'ok', Rev} -> Rev;
         _ -> store_recording_meta(State)
     end.
 
--spec store_url(map(), kz_term:ne_binary()) -> kz_term:ne_binary().
+-spec store_url(store_info(), kz_term:ne_binary()) -> kz_term:ne_binary().
 store_url(#{doc_db := Db
            ,doc_id := MediaId
-           ,media := {_,MediaName}
+           ,media := {_, MediaName}
            ,should_store := {'true', 'local'}
            }, _Rev) ->
-    kz_media_url:store(Db, {<<"call_recording">>, MediaId}, MediaName, []);
+    kz_media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, []);
 store_url(#{doc_db := Db
            ,doc_id := MediaId
-           ,media := {_,MediaName}
+           ,media := {_, MediaName}
            ,should_store := {'true', 'other', Url}
            ,verb := Verb
-           } = State, _Rev) ->
+           } = Store, _Rev) ->
     HandlerOpts = #{url => Url
                    ,verb => Verb
                    ,field_separator => <<>>
-                   ,field_list => handler_fields(Url, State)
+                   ,field_list => handler_fields(Url, Store)
                    },
     AttHandler = handler_from_url(Url),
     Handler = #{att_proxy => 'true'
@@ -256,17 +276,17 @@ store_url(#{doc_db := Db
                ,att_handler => {AttHandler, HandlerOpts}
                },
     Options = [{'plan_override', Handler}],
-    kz_media_url:store(Db, {<<"call_recording">>, MediaId}, MediaName, Options).
+    kz_media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
 
--spec handler_fields(kz_term:ne_binary(), state()) -> list().
-handler_fields(Url, State) ->
+-spec handler_fields(kz_term:ne_binary(), store_info()) -> list().
+handler_fields(Url, Store) ->
     {Protocol, _, _, _, _} = kz_http_util:urlsplit(Url),
-    handler_fields_for_protocol(Protocol, Url, State).
+    handler_fields_for_protocol(Protocol, Url, Store).
 
--spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), state()) -> list().
+-spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) -> list().
 handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{extension:=Ext}) ->
     [<<"call_recording_">>
-    ,{field, <<"call_id">>}
+    ,{'field', <<"call_id">>}
     ,<<".", Ext/binary>>
     ];
 handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
@@ -274,22 +294,22 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
                                                         }) ->
     {S1, S2} = check_url(Url),
     [<<S1/binary, "call_recording_">>
-    ,{field, <<"call_id">>}
+    ,{'field', <<"call_id">>}
     ,<<".", Ext/binary>>
     ,<<S2/binary, "from=">>
-    ,{field, <<"from">>}
+    ,{'field', <<"from">>}
     ,<<"&to=">>
-    ,{field, <<"to">>}
+    ,{'field', <<"to">>}
     ,<<"&caller_id_name=">>
-    ,{field, <<"caller_id_name">>}
+    ,{'field', <<"caller_id_name">>}
     ,<<"&caller_id_number=">>
-    ,{field, <<"caller_id_number">>}
+    ,{'field', <<"caller_id_number">>}
     ,<<"&call_id=">>
-    ,{field, <<"call_id">>}
+    ,{'field', <<"call_id">>}
     ,<<"&cdr_id=">>
-    ,{field, <<"cdr_id">>}
+    ,{'field', <<"cdr_id">>}
     ,<<"&interaction_id=">>
-    ,{field, <<"interaction_id">>}
+    ,{'field', <<"interaction_id">>}
     ,<<"&account_id=">>
     ,AccountId
     ].
@@ -303,7 +323,7 @@ check_url(Url) ->
 
 -spec check_url_query(kz_term:ne_binary()) -> binary().
 check_url_query(Query) ->
-    check_url_param(lists:last(binary:split(Query, <<"&">>, [global]))).
+    check_url_param(lists:last(binary:split(Query, <<"&">>, ['global']))).
 
 -spec check_url_param(kz_term:ne_binary()) -> binary().
 check_url_param(Param) ->
@@ -339,9 +359,10 @@ should_store_recording(AccountId, Url) ->
 -spec maybe_storage_plan(kz_term:ne_binary()) -> store_url().
 maybe_storage_plan(AccountId) ->
     AccountDb = kzs_util:format_account_mod_id(AccountId),
-    Plan = kzs_plan:get_dataplan(AccountDb, <<"call_recording">>),
+    Plan = kzs_plan:get_dataplan(AccountDb, kzd_call_recordings:type()),
     case maps:get('tag', Plan, <<"local">>) =/= <<"local">>
-        orelse maps:is_key('att_handler', Plan) of
+        orelse maps:is_key('att_handler', Plan)
+    of
         'true' -> {'true', 'local'};
         'false' -> should_store_recording()
     end.
@@ -353,7 +374,7 @@ should_store_recording() ->
         'false' -> 'false'
     end.
 
--spec save_recording(state()) -> 'ok'.
+-spec save_recording(store_info()) -> 'ok'.
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
 save_recording(#{media := Media, pid := Pid}=Store) ->
@@ -366,7 +387,7 @@ save_recording(#{media := Media, pid := Pid}=Store) ->
             store_recording(Media, StoreUrl, Store)
     end.
 
--spec store_recording({kz_term:ne_binary(), kz_term:ne_binary()}, kz_term:ne_binary() | function(), map()) -> 'ok'.
+-spec store_recording(kz_recording:media(), kz_term:ne_binary() | function(), store_info()) -> 'ok'.
 store_recording({DirName, MediaName}, StoreUrl, #{event := JObj, pid := Pid} = Map) ->
     Node = kz_call_event:switch_nodename(JObj),
     Filename = filename:join(DirName, MediaName),
@@ -375,11 +396,12 @@ store_recording({DirName, MediaName}, StoreUrl, #{event := JObj, pid := Pid} = M
         'ok' -> gen_server:cast(Pid, {'store_succeeded', Map})
     end.
 
-maybe_save_recording(Pid, JObj) ->
-    kz_log:put_callid(JObj),
-    maybe_save_recording(kz_recording:recorder(JObj), Pid, JObj).
+-spec maybe_save_recording(pid(), kz_json:object()) -> 'ok'.
+maybe_save_recording(Pid, RecordStop) ->
+    maybe_save_recording(Pid, RecordStop, kz_recording:recorder(RecordStop)).
 
-maybe_save_recording(?KZ_RECORDER, Pid, JObj) ->
+-spec maybe_save_recording(pid(), kz_json:object(), kz_term:api_ne_binary()) -> 'ok'.
+maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     AccountId = kz_call_event:account_id(JObj),
     Media = {_, MediaId} = kz_recording:response_media(JObj),
     Ext = filename:extension(MediaId),
@@ -415,5 +437,5 @@ maybe_save_recording(?KZ_RECORDER, Pid, JObj) ->
              ,pid => Pid
              },
     save_recording(Store);
-maybe_save_recording(Recorder, _Pid, _JObj) ->
-    lager:info("recorder ~s not handled", [Recorder]).
+maybe_save_recording(_Pid, _JObj, _Recorder) ->
+    lager:info("recorder ~s not handled", [_Recorder]).
