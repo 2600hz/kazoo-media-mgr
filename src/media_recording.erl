@@ -52,7 +52,7 @@
                        ,account_id => kz_term:ne_binary()
                        ,endpoint_id => kz_term:ne_binary()
                        ,call_id => kz_term:ne_binary()
-                       ,event => kz_call_event:doc()
+                       ,event => kz_call_event:payload()
                        ,origin => kz_term:ne_binary()
                        ,pid => pid()
                        }.
