@@ -20,9 +20,19 @@
 -export([start_link/0]).
 -export([init/1]).
 
--define(CHILDREN, [?WORKER('media_listener')
-                  ,?SUPER('media_recording_sup')
+-define(CHILDREN, [?SUPER('media_recording_sup')
+                  ,?SUPER('media_cache_sup')
+                  ,?WORKER_ARGS('kazoo_etsmgr_srv'
+                               ,[
+                                 [{'table_id', media_map:table_id()}
+                                 ,{'table_options', media_map:table_options()}
+                                 ,{'find_me_function', fun media_map:find_me_function/0}
+                                 ,{'gift_data', media_map:gift_data()}
+                                 ]
+                                ])
+                  ,?WORKER('media_map')
                   ,?WORKER('media_proxy')
+                  ,?WORKER('media_listener')
                   ]).
 
 %%==============================================================================

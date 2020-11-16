@@ -58,7 +58,7 @@
                        }.
 
 -define(STORAGE_RETRY_TIMES(AccountId)
-       ,kz_media_config:storage_retry_times(AccountId)
+       ,media_config:storage_retry_times(AccountId)
        ).
 
 %% By convention, we put the options here in macros, but not required.
@@ -70,7 +70,7 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
--define(MAX_RECORDING_LIMIT, kz_media_util:max_recording_time_limit()).
+-define(MAX_RECORDING_LIMIT, media_util:max_recording_time_limit()).
 -define(CHECK_CHANNEL_STATUS_TIMEOUT, 5 * ?MILLISECONDS_IN_SECOND).
 -define(RECORDING_ID_KEY, <<"media_name">>).
 
@@ -258,7 +258,7 @@ store_url(#{doc_db := Db
            ,media := {_, MediaName}
            ,should_store := {'true', 'local'}
            }, _Rev) ->
-    kz_media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, []);
+    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, []);
 store_url(#{doc_db := Db
            ,doc_id := MediaId
            ,media := {_, MediaName}
@@ -276,7 +276,7 @@ store_url(#{doc_db := Db
                ,att_handler => {AttHandler, HandlerOpts}
                },
     Options = [{'plan_override', Handler}],
-    kz_media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
+    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
 
 -spec handler_fields(kz_term:ne_binary(), store_info()) -> list().
 handler_fields(Url, Store) ->
@@ -369,7 +369,7 @@ maybe_storage_plan(AccountId) ->
 
 -spec should_store_recording() -> store_url().
 should_store_recording() ->
-    case kz_media_config:should_store_recordings() of
+    case media_config:should_store_recordings() of
         'true' -> {'true', 'local'};
         'false' -> 'false'
     end.

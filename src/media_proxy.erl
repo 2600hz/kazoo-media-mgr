@@ -40,7 +40,7 @@ start_link() ->
 stop() ->
     _ = cowboy:stop_listener(?MODULE),
     _ = cowboy:stop_listener('media_mgr_ssl'),
-    lager:debug("stopped kz_media_proxy listeners").
+    lager:debug("stopped media_proxy listeners").
 
 -spec maybe_start_plaintext(cowboy_router:dispatch_rules(), inet:ip_address()) -> 'ok'.
 maybe_start_plaintext(Dispatch, IP) ->
