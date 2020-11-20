@@ -35,7 +35,7 @@ init(Req, [StreamType]) ->
 
 init_from_tts(Id, Req, StreamType) ->
     lager:debug("fetching tts/~s", [Id]),
-    try kz_media_cache_sup:find_tts_server(Id) of
+    try media_cache_sup:find_tts_server(Id) of
         {'ok', Pid} ->
             {Meta, Bin} = media_data(Pid, StreamType),
             handle(Req, ?STATE(Meta, Bin));
@@ -53,13 +53,13 @@ init_from_tts(Id, Req, StreamType) ->
 init_from_doc(Url, Req, StreamType) ->
     {Db, Id, Attachment, _Options} = binary_to_term(base64:decode(Url)),
     lager:debug("fetching ~s/~s/~s", [Db, Id, Attachment]),
-    try kz_media_cache_sup:find_file_server(Db, Id, Attachment) of
+    try media_cache_sup:find_file_server(Db, Id, Attachment) of
         {'ok', Pid} ->
             {Meta, Bin} = media_data(Pid, StreamType),
             handle(Req, ?STATE(Meta, Bin));
         {'error', _} ->
             lager:debug("starting file server ~s/~s/~s", [Db, Id, Attachment]),
-            case kz_media_cache_sup:start_file_server(Db, Id, Attachment) of
+            case media_cache_sup:start_file_server(Db, Id, Attachment) of
                 {'ok', Pid} ->
                     {Meta, Bin} = media_data(Pid, StreamType),
                     handle(Req, ?STATE(Meta, Bin));
@@ -97,13 +97,13 @@ start_stream(Req, Meta, Bin, ContentType)
     lager:debug("media: ~s content-type: ~s size: ~b", [MediaName, ContentType, Size]),
 
     Req1 = cowboy_req:stream_reply(200
-                                  ,kz_media_proxy_util:resp_headers(ChunkSize, ContentType, MediaName, Url)
+                                  ,media_proxy_util:resp_headers(ChunkSize, ContentType, MediaName, Url)
                                   ,Req
                                   ),
 
-    ShoutHeader = kz_media_proxy_util:get_shout_header(MediaName, Url),
+    ShoutHeader = media_proxy_util:get_shout_header(MediaName, Url),
 
-    kz_media_proxy_util:stream_body(Req1, ChunkSize, Bin, ShoutHeader, 'true'),
+    media_proxy_util:stream_body(Req1, ChunkSize, Bin, ShoutHeader, 'true'),
     Req1;
 start_stream(Req, Meta, Bin, ContentType) ->
     Size = byte_size(Bin),
@@ -112,8 +112,8 @@ start_stream(Req, Meta, Bin, ContentType) ->
     lager:debug("media: ~s content-type: ~s size: ~b"
                ,[kz_json:get_binary_value(<<"media_name">>, Meta, <<>>), ContentType, Size]
                ),
-    Req1 = cowboy_req:stream_reply(200, kz_media_proxy_util:resp_headers(ContentType), Req),
-    kz_media_proxy_util:stream_body(Req1, ChunkSize, Bin, 'undefined', 'false'),
+    Req1 = cowboy_req:stream_reply(200, media_proxy_util:resp_headers(ContentType), Req),
+    media_proxy_util:stream_body(Req1, ChunkSize, Bin, 'undefined', 'false'),
     Req1.
 
 -spec terminate(any(), cowboy_req:req(), state()) -> 'ok'.
@@ -125,4 +125,4 @@ maybe_strip_extension(Id) -> filename:rootname(Id).
 
 -spec media_data(pid(), stream_type()) -> {kz_json:object(), binary()}.
 media_data(Pid, Function) ->
-    kz_media_file_cache:Function(Pid).
+    media_file_cache:Function(Pid).
