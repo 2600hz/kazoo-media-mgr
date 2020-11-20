@@ -51,13 +51,13 @@ start_link() ->
                                                      ]}
                                      ], []).
 
--spec handle_media_req(kz_json:object(), kz_term:proplist()) -> kz_amqp_worker:cast_return().
+-spec handle_media_req(kz_json:object(), kz_term:proplist()) -> ok.
 handle_media_req(JObj, _Props) ->
     'true' = kapi_media:req_v(JObj),
     _ = kz_log:put_callid(JObj),
     lager:debug("recv media req for msg id: ~s", [kz_api:msg_id(JObj)]),
     MediaName = kz_json:get_value(<<"Media-Name">>, JObj),
-    case kz_media_url:playback(MediaName, JObj) of
+    case media_url:playback(MediaName, JObj) of
         {'error', ErrorMessage} -> send_error_resp(JObj, ErrorMessage);
         StreamURL -> send_media_resp(JObj, StreamURL)
     end.
@@ -131,8 +131,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec send_error_resp(kz_json:object(), atom() | kz_term:ne_binary()) ->
-          kz_amqp_worker:cast_return().
+-spec send_error_resp(kz_json:object(), atom() | kz_term:ne_binary()) -> ok.
 send_error_resp(JObj, ErrMsg) ->
     MediaName = kz_json:get_value(<<"Media-Name">>, JObj),
     Error = [{<<"Media-Name">>, MediaName}
@@ -143,11 +142,9 @@ send_error_resp(JObj, ErrMsg) ->
             ],
     lager:debug("sending error reply ~s for ~s", [ErrMsg, MediaName]),
     ServerId = kz_json:get_value(<<"Server-ID">>, JObj),
-    Publisher = fun(P) -> kapi_media:publish_error(ServerId, P) end,
-    kz_amqp_worker:cast(Error, Publisher).
+    kapi_media:publish_error(ServerId, Error).
 
--spec send_media_resp(kz_json:object(), kz_term:ne_binary()) ->
-          kz_amqp_worker:cast_return().
+-spec send_media_resp(kz_json:object(), kz_term:ne_binary()) -> ok.
 send_media_resp(JObj, StreamURL) ->
     lager:debug("media stream URL: ~s", [StreamURL]),
     Resp = [{<<"Media-Name">>, kz_json:get_value(<<"Media-Name">>, JObj)}
@@ -156,5 +153,4 @@ send_media_resp(JObj, StreamURL) ->
            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
            ],
     ServerId = kz_json:get_value(<<"Server-ID">>, JObj),
-    Publisher = fun(P) -> kapi_media:publish_resp(ServerId, P) end,
-    kz_amqp_worker:cast(Resp, Publisher).
+    kapi_media:publish_resp(ServerId, Resp).
