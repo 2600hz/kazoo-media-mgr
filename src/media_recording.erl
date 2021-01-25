@@ -292,7 +292,7 @@ handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{extension:=Ext}) ->
 handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{extension:=Ext}) ->
     [<<"call_recording_">>
     ,{'field', <<"call_id">>}
-    ,<<".", Ext/binary>>
+    ,get_extension(Ext)
     ];
 handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
                                                         ,extension:=Ext
