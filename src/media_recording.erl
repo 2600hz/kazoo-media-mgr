@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2020, 2600Hz
+%%% @copyright (C) 2012-2021, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -287,7 +287,12 @@ handler_fields(Url, Store) ->
 handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{extension:=Ext}) ->
     [<<"call_recording_">>
     ,{'field', <<"call_id">>}
-    ,<<".", Ext/binary>>
+    ,get_extension(Ext)
+    ];
+handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{extension:=Ext}) ->
+    [<<"call_recording_">>
+    ,{'field', <<"call_id">>}
+    ,get_extension(Ext)
     ];
 handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
                                                         ,extension:=Ext
@@ -295,7 +300,7 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
     {S1, S2} = check_url(Url),
     [<<S1/binary, "call_recording_">>
     ,{'field', <<"call_id">>}
-    ,<<".", Ext/binary>>
+    ,get_extension(Ext)
     ,<<S2/binary, "from=">>
     ,{'field', <<"from">>}
     ,<<"&to=">>
@@ -313,6 +318,10 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
     ,<<"&account_id=">>
     ,AccountId
     ].
+
+-spec get_extension(kz_term:ne_binary()) -> kz_term:ne_binary().
+get_extension(<<".", _/binary>> = Ext) -> Ext;
+get_extension(Ext) -> <<".", Ext/binary>>.
 
 -spec check_url(kz_term:ne_binary()) -> {binary(), kz_term:ne_binary()}.
 check_url(Url) ->
@@ -333,11 +342,12 @@ check_url_param(Param) ->
         _ -> <<"&recording=">>
     end.
 
--spec handler_from_url(kz_term:ne_binary()) -> 'kz_att_ftp' | 'kz_att_http' | 'undefined'.
+-spec handler_from_url(kz_term:ne_binary()) -> 'kz_att_ftp' | 'kz_att_sftp' | 'kz_att_http' | 'undefined'.
 handler_from_url(Url) ->
     case kz_http_util:urlsplit(Url) of
         {<<"ftp">>, _, _, _, _} -> 'kz_att_ftp';
         {<<"ftps">>, _, _, _, _} -> 'kz_att_ftp';
+        {<<"sftp">>, _, _, _, _} -> 'kz_att_sftp';
         {<<"http">>, _, _, _, _} -> 'kz_att_http';
         {<<"https">>, _, _, _, _} -> 'kz_att_http';
         _ -> 'undefined'
