@@ -284,39 +284,34 @@ handler_fields(Url, Store) ->
     handler_fields_for_protocol(Protocol, Url, Store).
 
 -spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) -> list().
-handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{extension:=Ext}) ->
-    [<<"call_recording_">>
+handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+    [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
-    ,get_extension(Ext)
+    ,{'const', get_extension(Ext)}
     ];
-handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{extension:=Ext}) ->
-    [<<"call_recording_">>
+handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+    [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
-    ,<<".", Ext/binary>>
+    ,{'const', get_extension(Ext)}
     ];
-handler_fields_for_protocol(<<"http", _/binary>>, Url, #{account_id:=AccountId
-                                                        ,extension:=Ext
+handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
+                                                        ,'extension':=Ext
+                                                        ,'doc_id':=DocId
                                                         }) ->
     {S1, S2} = check_url(Url),
-    [<<S1/binary, "call_recording_">>
-    ,{'field', <<"call_id">>}
-    ,get_extension(Ext)
-    ,<<S2/binary, "from=">>
-    ,{'field', <<"from">>}
-    ,<<"&to=">>
-    ,{'field', <<"to">>}
-    ,<<"&caller_id_name=">>
-    ,{'field', <<"caller_id_name">>}
-    ,<<"&caller_id_number=">>
-    ,{'field', <<"caller_id_number">>}
-    ,<<"&call_id=">>
-    ,{'field', <<"call_id">>}
-    ,<<"&cdr_id=">>
-    ,{'field', <<"cdr_id">>}
-    ,<<"&interaction_id=">>
-    ,{'field', <<"interaction_id">>}
-    ,<<"&account_id=">>
-    ,AccountId
+    [{'const', <<S1/binary, "call_recording_">>}, {'field', <<"call_id">>}, {'const', get_extension(Ext)}
+    ,{'const', <<S2/binary, "from=">>}, {'field', <<"from">>}
+    ,{'const', <<"&to=">>}, {'field', <<"to">>}
+    ,{'const', <<"&caller_id_name=">>}, {'field', <<"caller_id_name">>}
+    ,{'const', <<"&caller_id_number=">>}, {'field', <<"caller_id_number">>}
+    ,{'const', <<"&call_id=">>}, {'field', <<"call_id">>}
+    ,{'const', <<"&cdr_id=">>}, {'field', <<"cdr_id">>}
+    ,{'const', <<"&interaction_id=">>}, {'field', <<"interaction_id">>}
+    ,{'const', <<"&account_id=">>}, AccountId
+    ,{'const', <<"&duration_ms=">>}, {'field', <<"duration_ms">>}
+    ,{'const', <<"&owner_id=">>}, {'field', <<"owner_id">>}
+    ,{'const', <<"&start=">>}, {'field', <<"start">>}
+    ,{'const', <<"&recording_id=">>}, {'const', DocId}
     ].
 
 -spec get_extension(kz_term:ne_binary()) -> kz_term:ne_binary().
