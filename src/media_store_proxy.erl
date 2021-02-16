@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2020, 2600Hz
+%%% @copyright (C) 2012-2021, 2600Hz
 %%% @doc Handles storage proxy requests for media binaries
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -303,14 +303,11 @@ store(#media_store_path{db=Db
     end.
 
 -spec success(kz_json:object(), kz_term:proplist(), cowboy_req:req()) -> cowboy_req:req().
-success(JObj, Props, Req0) ->
+success(JObj, _Props, Req0) ->
     Body = io_lib:format("~s~n", [kz_json:encode(kz_json:set_value(<<"ok">>, 'true', JObj))]),
     Req1 = cowboy_req:set_resp_body(Body, Req0),
-    Headers = maps:from_list([{kz_term:to_binary(H), kz_term:to_binary(V)}
-                              || {H, V} <- props:get_value('headers', Props, [])
-                             ]),
     lager:info("replying with 200"),
-    cowboy_req:reply(200, Headers, Req1).
+    cowboy_req:reply(200, Req1).
 
 -spec failure(any(), cowboy_req:req()) -> cowboy_req:req().
 failure(Reason, Req0) ->
