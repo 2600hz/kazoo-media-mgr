@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2020, 2600Hz
+%%% @copyright (C) 2010-2021, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -57,7 +57,11 @@ maybe_start_plaintext(Dispatch, IP) ->
                                                                  ]
                                                ,'num_acceptors' => Listeners
                                                }
-                                             ,#{'env' => #{'dispatch' => Dispatch}}
+                                             ,#{'env' => #{'dispatch' => Dispatch}
+                                               ,idle_timeout => infinity
+                                               ,inactivity_timeout => infinity
+                                               ,shutdown_timeout => infinity
+                                               }
                                              ),
             lager:info("started media proxy(~p) on port ~p", [_Pid, Port])
     end.
@@ -96,6 +100,9 @@ maybe_start_ssl(Dispatch, IP) ->
                                                  ,'num_acceptors' => Listeners
                                                  }
                                                ,#{'env' => #{'dispatch' => Dispatch}
+                                                 ,idle_timeout => infinity
+                                                 ,inactivity_timeout => infinity
+                                                 ,shutdown_timeout => infinity
                                                  }
                                                ),
                 lager:info("started ssl media proxy(~p) on port ~p", [_Pid, SSLPort])
