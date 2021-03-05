@@ -118,6 +118,12 @@ handle_cast({'store_failed', #{retries := 0}, Error}, State) ->
     lager:debug("store failed : ~p, no more retries.", [Error]),
     {'noreply', State};
 
+handle_cast({'store_failed', Store, file_not_found}, State) ->
+    #{doc_db := Db
+     ,doc_id := DocId
+     } = Store,
+    kz_datamgr:del_doc(Db, DocId),
+    {'noreply', State};
 handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
     Sleep = ?MILLISECONDS_IN_MINUTE * rand:uniform(10),
     lager:debug("store failed : ~p, retrying ~p more times, next in ~p minute(s)"
