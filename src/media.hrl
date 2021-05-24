@@ -9,10 +9,6 @@
 -define(CONFIG_CAT, <<"media">>).
 
 -define(MEDIA_DB, <<"system_media">>).
--define(PORT_RANGE, 0). % use 0 to have OS assign port #, {Low, Hi} for range of ports to try
--define(PORT_OPTIONS, ['binary', {'packet',0}, {'active','false'}, {'reuseaddr', 'true'}]).
--define(MAX_RESERVED_PORTS, 10).
--define(MAX_WAIT_FOR_LISTENERS, 600 * ?MILLISECONDS_IN_SECOND). %% 600 secs = 10 minutes
 
 -define(PROMPT_LANGUAGE_KEY, <<"default_language">>).
 
@@ -44,17 +40,6 @@
                     ]).
 
 -define(CHUNKSIZE, 24576).
-
--record(media_file, {stream_url = <<>> :: binary()
-                    ,contents = <<>> :: binary()
-                    ,content_type = <<>> :: binary()
-                    ,media_name = <<>> :: binary()
-                    ,chunk_size = ?CHUNKSIZE :: integer()
-                    ,shout_response = "" :: iolist()
-                    ,shout_header = {0, <<>>} :: {integer(), binary()} | 'undefined'
-                    ,continuous = false :: boolean()
-                    ,pad_response = true :: boolean()
-                    }).
 
 -type media_store_option() :: {'content-type', kz_term:ne_binary()} |
                               {'doc_type', kz_term:ne_binary()} |

@@ -70,10 +70,6 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
--define(MAX_RECORDING_LIMIT, media_util:max_recording_time_limit()).
--define(CHECK_CHANNEL_STATUS_TIMEOUT, 5 * ?MILLISECONDS_IN_SECOND).
--define(RECORDING_ID_KEY, <<"media_name">>).
-
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
     gen_listener:start_link(?SERVER
@@ -118,11 +114,11 @@ handle_cast({'store_failed', #{retries := 0}, Error}, State) ->
     lager:debug("store failed : ~p, no more retries.", [Error]),
     {'noreply', State};
 
-handle_cast({'store_failed', Store, file_not_found}, State) ->
+handle_cast({'store_failed', Store, 'file_not_found'}, State) ->
     #{doc_db := Db
      ,doc_id := DocId
      } = Store,
-    kz_datamgr:del_doc(Db, DocId),
+    _ = kz_datamgr:del_doc(Db, DocId),
     {'noreply', State};
 handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
     Sleep = ?MILLISECONDS_IN_MINUTE * rand:uniform(10),
@@ -212,32 +208,32 @@ store_recording_meta(#{media := {_, MediaName}
     Seconds = Length div ?MILLISECONDS_IN_SECOND,
     Start = Timestamp - Seconds,
     BaseMediaDoc = kz_json:from_list(
-                     [{<<"name">>, MediaName}
-                     ,{<<"description">>, <<"recording ", MediaName/binary>>}
+                     [{<<"_id">>, DocId}
+                     ,{<<"call_id">>, CallId}
+                     ,{<<"callee_id_name">>, kz_call_event:callee_id_name(JObj)}
+                     ,{<<"callee_id_number">>, kz_call_event:callee_id_number(JObj)}
+                     ,{<<"caller_id_name">>, kz_call_event:caller_id_name(JObj)}
+                     ,{<<"caller_id_number">>, kz_call_event:caller_id_number(JObj)}
+                     ,{<<"cdr_id">>, CdrId}
                      ,{<<"content_type">>, kz_mime:from_extension(Ext)}
-                     ,{<<"media_type">>, Ext}
-                     ,{<<"media_source">>, <<"recorded">>}
-                     ,{<<"source_type">>, kz_term:to_binary(?MODULE)}
-                     ,{<<"from">>, kz_json:get_ne_binary_value(<<"From">>, JObj)}
-                     ,{<<"to">>, kz_json:get_ne_binary_value(<<"To">>, JObj)}
-                     ,{<<"request">>, kz_json:get_ne_binary_value(<<"Request">>, JObj)}
+                     ,{<<"custom_channel_vars">>, kz_call_event:custom_channel_vars(JObj)}
+                     ,{<<"description">>, <<"recording ", MediaName/binary>>}
                      ,{<<"direction">>, kz_call_event:call_direction(JObj)}
-                     ,{<<"start">>, Start}
                      ,{<<"duration">>, Seconds}
                      ,{<<"duration_ms">>, Length}
-                     ,{<<"caller_id_number">>, kz_call_event:caller_id_number(JObj)}
-                     ,{<<"caller_id_name">>, kz_call_event:caller_id_name(JObj)}
-                     ,{<<"callee_id_number">>, kz_call_event:callee_id_number(JObj)}
-                     ,{<<"callee_id_name">>, kz_call_event:callee_id_name(JObj)}
-                     ,{<<"call_id">>, CallId}
                      ,{<<"endpoint_id">>, EndpointId}
-                     ,{<<"owner_id">>, kz_call_event:custom_channel_var(JObj, <<"Owner-ID">>)}
-                     ,{<<"url">>, Url}
-                     ,{<<"cdr_id">>, CdrId}
+                     ,{<<"from">>, kz_json:get_ne_binary_value(<<"From">>, JObj)}
                      ,{<<"interaction_id">>, InteractionId}
-                     ,{<<"_id">>, DocId}
+                     ,{<<"media_source">>, <<"recorded">>}
+                     ,{<<"media_type">>, Ext}
+                     ,{<<"name">>, MediaName}
                      ,{<<"origin">>, Origin}
-                     ,{<<"custom_channel_vars">>, kz_call_event:custom_channel_vars(JObj)}
+                     ,{<<"owner_id">>, kz_call_event:custom_channel_var(JObj, <<"Owner-ID">>)}
+                     ,{<<"request">>, kz_json:get_ne_binary_value(<<"Request">>, JObj)}
+                     ,{<<"source_type">>, kz_term:to_binary(?MODULE)}
+                     ,{<<"start">>, Start}
+                     ,{<<"to">>, kz_json:get_ne_binary_value(<<"To">>, JObj)}
+                     ,{<<"url">>, Url}
                      ]
                     ),
 
@@ -284,12 +280,14 @@ store_url(#{doc_db := Db
     Options = [{'plan_override', Handler}],
     media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
 
--spec handler_fields(kz_term:ne_binary(), store_info()) -> list().
+-spec handler_fields(kz_term:ne_binary(), store_info()) ->
+          kz_term:proplist().
 handler_fields(Url, Store) ->
     {Protocol, _, _, _, _} = kz_http_util:urlsplit(Url),
     handler_fields_for_protocol(Protocol, Url, Store).
 
--spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) -> list().
+-spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
+          kz_term:proplist().
 handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
     [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
@@ -343,7 +341,8 @@ check_url_param(Param) ->
         _ -> <<"&recording=">>
     end.
 
--spec handler_from_url(kz_term:ne_binary()) -> 'kz_att_ftp' | 'kz_att_sftp' | 'kz_att_http' | 'undefined'.
+-spec handler_from_url(kz_term:ne_binary()) ->
+          'kz_att_ftp' | 'kz_att_sftp' | 'kz_att_http' | 'undefined'.
 handler_from_url(Url) ->
     case kz_http_util:urlsplit(Url) of
         {<<"ftp">>, _, _, _, _} -> 'kz_att_ftp';

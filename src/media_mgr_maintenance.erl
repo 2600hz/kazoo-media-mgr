@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2020, 2600Hz
+%%% @copyright (C) 2010-2021, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -50,7 +50,7 @@ prompt_url(PromptId, AccountId, Language) ->
 -spec migrate() -> 'no_return'.
 migrate() ->
     io:format("migrating relevant settings from system_config/callflow to system_config/~s~n", [?CONFIG_CAT]),
-    maybe_migrate_system_config(<<"callflow">>),
+    maybe_migrate_system_config(<<"callflow">>, 'false'),
 
     io:format("migrating relevant settings from system_config/media_mgr to system_config/~s~n", [?CONFIG_CAT]),
     maybe_migrate_system_config(<<"media_mgr">>, 'true'),
@@ -282,10 +282,6 @@ refresh() ->
 register_views() ->
     kz_datamgr:register_views_from_folder('kazoo_media').
 
--spec maybe_migrate_system_config(kz_term:ne_binary()) -> 'ok'.
-maybe_migrate_system_config(ConfigId) ->
-    maybe_migrate_system_config(ConfigId, 'false').
-
 -spec maybe_migrate_system_config(kz_term:ne_binary(), boolean()) -> 'ok'.
 maybe_migrate_system_config(ConfigId, DeleteAfter) ->
     case kz_datamgr:open_doc(?KZ_CONFIG_DB, ConfigId) of
@@ -332,7 +328,7 @@ delete_original_config(OrigJObj, Updates, 'false') ->
 -spec ensure_save_config_db(kz_json:flat_proplist(), kz_json:object()) -> 'ok'.
 ensure_save_config_db(Updates, JObj) ->
     Id = kz_doc:id(JObj),
-    PvtUpdates = [{<<"pvt_modified">>, kz_time:now_s()}],
+    PvtUpdates = [{[<<"pvt_modified">>], kz_time:now_s()}],
     Update = [{'update', Updates}
              ,{'extra_update', PvtUpdates}
              ,{'ensure_saved', 'true'}

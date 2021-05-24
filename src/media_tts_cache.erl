@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2020, 2600Hz
+%%% @copyright (C) 2012-2021, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -37,8 +37,7 @@
 
 -define(TIMEOUT_MESSAGE, {'$media_tts_cache', 'tts_timeout'}).
 
--record(state, {text :: kz_term:api_ne_binary()
-               ,contents = <<>> :: binary()
+-record(state, {contents = <<>> :: binary()
                ,status :: 'streaming' | 'ready'
                ,kz_http_req_id :: kz_http:req_id()
                ,reqs :: [{pid(), reference()}]
