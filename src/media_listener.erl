@@ -51,7 +51,7 @@ start_link() ->
                                                      ]}
                                      ], []).
 
--spec handle_media_req(kz_json:object(), kz_term:proplist()) -> ok.
+-spec handle_media_req(kapi_media:req(), kz_term:proplist()) -> 'ok'.
 handle_media_req(JObj, _Props) ->
     'true' = kapi_media:req_v(JObj),
     _ = kz_log:put_callid(JObj),
@@ -131,26 +131,26 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec send_error_resp(kz_json:object(), atom() | kz_term:ne_binary()) -> ok.
+-spec send_error_resp(kapi_media:req(), atom() | kz_term:ne_binary()) -> 'ok'.
 send_error_resp(JObj, ErrMsg) ->
     MediaName = kz_json:get_value(<<"Media-Name">>, JObj),
     Error = [{<<"Media-Name">>, MediaName}
             ,{<<"Error-Code">>, <<"other">>}
             ,{<<"Error-Msg">>, kz_term:to_binary(ErrMsg)}
-            ,{<<"Msg-ID">>, kz_json:get_value(<<"Msg-ID">>, JObj)}
+            ,{<<"Msg-ID">>, kz_api:msg_id(JObj)}
             | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
             ],
     lager:debug("sending error reply ~s for ~s", [ErrMsg, MediaName]),
-    ServerId = kz_json:get_value(<<"Server-ID">>, JObj),
+    ServerId = kz_api:server_id(JObj),
     kapi_media:publish_error(ServerId, Error).
 
--spec send_media_resp(kz_json:object(), kz_term:ne_binary()) -> ok.
+-spec send_media_resp(kapi_media:req(), kz_term:ne_binary()) -> 'ok'.
 send_media_resp(JObj, StreamURL) ->
-    lager:debug("media stream URL: ~s", [StreamURL]),
+    lager:debug("media stream URL: ~s", [kz_log:redactor(StreamURL)]),
     Resp = [{<<"Media-Name">>, kz_json:get_value(<<"Media-Name">>, JObj)}
            ,{<<"Stream-URL">>, StreamURL}
-           ,{<<"Msg-ID">>, kz_json:get_value(<<"Msg-ID">>, JObj)}
+           ,{<<"Msg-ID">>, kz_api:msg_id(JObj)}
            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
            ],
-    ServerId = kz_json:get_value(<<"Server-ID">>, JObj),
+    ServerId = kz_api:server_id(JObj),
     kapi_media:publish_resp(ServerId, Resp).
