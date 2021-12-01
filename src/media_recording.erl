@@ -360,7 +360,9 @@ should_store_recording(AccountId, Url) ->
         'false' ->
             case handler_from_url(Url) of
                 'undefined' ->
-                    lager:debug("invalid protocol for url ~s : not saving attachment"),
+                    lager:debug("invalid protocol for url ~s : not saving attachment"
+                               ,[kz_log:redactor(Url)]
+                               ),
                     'false';
                 _ -> {'true', 'other', Url}
             end
