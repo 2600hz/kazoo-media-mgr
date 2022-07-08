@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2022, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -207,10 +207,9 @@ store_recording_meta(#{media := {_, MediaName}
                       ,origin := Origin
                       }) ->
     Ext = filename:extension(MediaName),
-    Timestamp = kz_call_event:timestamp(JObj),
-    Length = kz_call_event:recording_length(JObj),
-    Seconds = Length div ?MILLISECONDS_IN_SECOND,
-    Start = Timestamp - Seconds,
+    LengthMs = recording_length(JObj),
+    LengthSeconds = LengthMs div ?MILLISECONDS_IN_SECOND,
+    Start = record_start_time(JObj, LengthSeconds),
     BaseMediaDoc = kz_json:from_list(
                      [{<<"name">>, MediaName}
                      ,{<<"description">>, <<"recording ", MediaName/binary>>}
@@ -223,8 +222,8 @@ store_recording_meta(#{media := {_, MediaName}
                      ,{<<"request">>, kz_json:get_ne_binary_value(<<"Request">>, JObj)}
                      ,{<<"direction">>, kz_call_event:call_direction(JObj)}
                      ,{<<"start">>, Start}
-                     ,{<<"duration">>, Seconds}
-                     ,{<<"duration_ms">>, Length}
+                     ,{<<"duration">>, LengthSeconds}
+                     ,{<<"duration_ms">>, LengthMs}
                      ,{<<"caller_id_number">>, kz_call_event:caller_id_number(JObj)}
                      ,{<<"caller_id_name">>, kz_call_event:caller_id_name(JObj)}
                      ,{<<"callee_id_number">>, kz_call_event:callee_id_number(JObj)}
@@ -247,6 +246,29 @@ store_recording_meta(#{media := {_, MediaName}
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
         {'error', _}= Err -> Err
+    end.
+
+-spec recording_length(kz_json:object()) -> integer().
+recording_length(JObj) ->
+    case kz_call_event:recording_length(JObj) of
+        'undefined' -> 0;
+        Length -> Length
+    end.
+
+-spec record_start_time(kz_json:object(), kz_term:api_integer()) -> integer().
+record_start_time(JObj, Length) ->
+    case kz_recording:record_start_time_us(JObj) of
+        'undefined' ->
+            case kz_call_event:timestamp(JObj) of
+                'undefined' ->
+                    kz_time:now_s() - Length;
+                Timestamp ->
+                    Timestamp - Length
+            end;
+        StartUs ->
+            kz_time:microseconds_to_seconds(
+              kz_time:unix_us_to_gregorian_us(StartUs)
+             )
     end.
 
 -spec maybe_store_recording_meta(map()) -> kz_term:ne_binary() | {'error', any()}.
