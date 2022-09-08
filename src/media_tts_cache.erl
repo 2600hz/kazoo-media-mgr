@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2022, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -42,7 +42,7 @@
                ,kz_http_req_id :: kz_http:req_id()
                ,reqs :: [{pid(), reference()}]
                ,meta :: kz_json:object()
-               ,engine = kz_term:ne_binary()
+               ,engine :: kz_term:ne_binary()
                ,engine_data = 'undefined' :: any()
                ,timer_ref :: reference()
                ,id :: kz_term:ne_binary() %% used in publishing doc_deleted
@@ -174,7 +174,6 @@ handle_info({'http', {ReqID, 'stream', Bin}}, #state{kz_http_req_id=ReqID
     _ = stop_timer(TRef),
     case kz_json:get_value(<<"content_type">>, Meta) of
         <<"audio/", _/binary>>=_CT ->
-            lager:debug("adding ~p bytes of ~s", [byte_size(Bin), _CT]),
             {'noreply', State#state{contents = <<Contents/binary, Bin/binary>>
                                    ,timer_ref=start_timer()
                                    }};
