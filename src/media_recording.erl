@@ -39,22 +39,23 @@
                   ,is_consuming => boolean()
                   }.
 
--type store_info() :: #{url => kz_term:ne_binary()
-                       ,media => kz_recording:media()
-                       ,extension => kz_term:ne_binary()
-                       ,doc_id => kz_term:ne_binary()
-                       ,doc_db => kz_term:ne_binary()
-                       ,cdr_id => kz_term:ne_binary()
-                       ,interaction_id => kz_term:ne_binary()
-                       ,should_store => store_url()
-                       ,retries => non_neg_integer()
-                       ,verb => kz_term:ne_binary()
-                       ,account_id => kz_term:ne_binary()
-                       ,endpoint_id => kz_term:ne_binary()
-                       ,call_id => kz_term:ne_binary()
-                       ,event => kz_call_event:payload()
-                       ,origin => kz_term:ne_binary()
-                       ,pid => pid()
+-type store_info() :: #{url := kz_term:ne_binary()
+                       ,media := kz_recording:media()
+                       ,extension := kz_term:ne_binary()
+                       ,doc_id := kz_term:ne_binary()
+                       ,doc_db := kz_term:ne_binary()
+                       ,cdr_id := kz_term:ne_binary()
+                       ,interaction_id := kz_term:ne_binary()
+                       ,should_store := store_url()
+                       ,retries := non_neg_integer()
+                       ,verb := kz_term:ne_binary()
+                       ,account_id := kz_term:ne_binary()
+                       ,endpoint_id := kz_term:ne_binary()
+                       ,call_id := kz_term:ne_binary()
+                       ,event := kz_call_event:payload()
+                       ,origin := kz_term:ne_binary()
+                       ,pid := pid()
+                       ,user_metadata => kz_json:object()
                        }.
 
 -define(STORAGE_RETRY_TIMES(AccountId)
@@ -125,7 +126,7 @@ handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
     lager:debug("store failed : ~p, retrying ~p more times, next in ~p minute(s)"
                ,[Error, Retries, Sleep / ?MILLISECONDS_IN_MINUTE]
                ),
-    _ = timer:send_after(Sleep, self(), {'retry_storage', Store}),
+    _TRef = erlang:send_after(Sleep, self(), {'retry_storage', Store}),
     {'noreply', State};
 handle_cast({'gen_listener',{'created_queue', Queue}}, State) ->
     {'noreply', State#{queue => Queue}};
@@ -186,22 +187,38 @@ code_change(_OldVsn, State, _Extra) ->
 %%%=============================================================================
 
 %%------------------------------------------------------------------------------
-%% @doc
+%% @doc Get and store the recording metadata in an MODb.
 %% @end
 %%------------------------------------------------------------------------------
--spec store_recording_meta(map()) -> kz_term:ne_binary() | {'error', any()}.
-store_recording_meta(#{media := {_, MediaName}
-                      ,doc_db := Db
+-spec store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
+store_recording_meta(#{doc_db := Db
                       ,doc_id := DocId
-                      ,cdr_id := CdrId
-                      ,interaction_id := InteractionId
-                      ,url := Url
-                      ,call_id := CallId
-                      ,event := JObj
                       ,account_id := AccountId
-                      ,endpoint_id := EndpointId
-                      ,origin := Origin
-                      }) ->
+                      }=StoreInfo) ->
+    BaseMediaDoc = recording_meta(StoreInfo),
+    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
+    case kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
+        {'ok', Doc} ->
+            lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
+            kz_doc:revision(Doc);
+        {'error', _}= Err -> Err
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc Get the recording metadata to be stored from the store info.
+%% @end
+%%------------------------------------------------------------------------------
+-spec recording_meta(store_info()) -> kzd_call_recordings:doc().
+recording_meta(#{media := {_, MediaName}
+                ,doc_id := DocId
+                ,cdr_id := CdrId
+                ,interaction_id := InteractionId
+                ,url := Url
+                ,call_id := CallId
+                ,event := JObj
+                ,endpoint_id := EndpointId
+                ,origin := Origin
+                }=StoreInfo) ->
     Ext = filename:extension(MediaName),
     LengthMs = recording_length(JObj),
     LengthSeconds = LengthMs div ?MILLISECONDS_IN_SECOND,
@@ -235,14 +252,17 @@ store_recording_meta(#{media := {_, MediaName}
                      ,{<<"url">>, Url}
                      ]
                     ),
+    maybe_set_user_metadata(StoreInfo, BaseMediaDoc).
 
-    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
-    case kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
-        {'ok', Doc} ->
-            lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
-            kz_doc:revision(Doc);
-        {'error', _}= Err -> Err
-    end.
+%%------------------------------------------------------------------------------
+%% @doc Set the user metadata on the recording metadata if the user metadata has
+%% been defined.
+%% @end
+%%------------------------------------------------------------------------------
+-spec maybe_set_user_metadata(store_info(), kzd_call_recordings:doc()) -> kzd_call_recordings:doc().
+maybe_set_user_metadata(#{user_metadata := UserMetadata}, Doc) ->
+    kzd_call_recordings:set_user_metadata(Doc, UserMetadata);
+maybe_set_user_metadata(_, Doc) -> Doc.
 
 -spec recording_length(kz_json:object()) -> integer().
 recording_length(JObj) ->
@@ -267,7 +287,7 @@ record_start_time(JObj, Length) ->
              )
     end.
 
--spec maybe_store_recording_meta(map()) -> kz_term:ne_binary() | {'error', any()}.
+-spec maybe_store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
 maybe_store_recording_meta(#{doc_db := Db
                             ,doc_id := DocId
                             }=State) ->
@@ -470,6 +490,23 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
              ,origin => Origin
              ,pid => Pid
              },
-    save_recording(Store);
+    save_recording(maybe_set_default_user_metadata(Store));
 maybe_save_recording(_Pid, _JObj, _Recorder) ->
     lager:info("recorder ~s not handled", [_Recorder]).
+
+%%------------------------------------------------------------------------------
+%% @doc Set the default user metadata on the store info if some default metadata
+%% has been configured.
+%% @end
+%%------------------------------------------------------------------------------
+-spec maybe_set_default_user_metadata(store_info()) -> store_info().
+maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
+    case kapps_account_config:get_with_strategy(<<"global">>
+                                               ,AccountId
+                                               ,?CONFIG_CAT
+                                               ,[<<"call_recording">>, <<"default_user_metadata">>]
+                                               )
+    of
+        'undefined' -> StoreInfo;
+        DefaultUserMetadata -> StoreInfo#{user_metadata => DefaultUserMetadata}
+    end.
