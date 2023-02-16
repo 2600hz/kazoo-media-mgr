@@ -314,7 +314,7 @@ store_url(#{doc_db := Db
                    ,field_separator => <<>>
                    ,field_list => handler_fields(Url, Store)
                    },
-    AttHandler = handler_from_url(Url),
+    AttHandler = kapps_call_recording:handler_from_url(Url),
     Handler = #{att_proxy => 'true'
                ,att_post_handler => 'external'
                ,att_handler => {AttHandler, HandlerOpts}
@@ -383,51 +383,6 @@ check_url_param(Param) ->
         _ -> <<"&recording=">>
     end.
 
--spec handler_from_url(kz_term:ne_binary()) ->
-          'kz_att_ftp' | 'kz_att_sftp' | 'kz_att_http' | 'undefined'.
-handler_from_url(Url) ->
-    case kz_http_util:urlsplit(Url) of
-        {<<"ftp">>, _, _, _, _} -> 'kz_att_ftp';
-        {<<"ftps">>, _, _, _, _} -> 'kz_att_ftp';
-        {<<"sftp">>, _, _, _, _} -> 'kz_att_sftp';
-        {<<"http">>, _, _, _, _} -> 'kz_att_http';
-        {<<"https">>, _, _, _, _} -> 'kz_att_http';
-        _ -> 'undefined'
-    end.
-
--spec should_store_recording(kz_term:ne_binary(), kz_term:api_binary()) -> store_url().
-should_store_recording(AccountId, Url) ->
-    case kz_term:is_empty(Url) of
-        'true' -> maybe_storage_plan(AccountId);
-        'false' ->
-            case handler_from_url(Url) of
-                'undefined' ->
-                    lager:debug("invalid protocol for url ~s : not saving attachment"
-                               ,[kz_log:redactor(Url)]
-                               ),
-                    'false';
-                _ -> {'true', 'other', Url}
-            end
-    end.
-
--spec maybe_storage_plan(kz_term:ne_binary()) -> store_url().
-maybe_storage_plan(AccountId) ->
-    AccountDb = kzs_util:format_account_mod_id(AccountId),
-    Plan = kzs_plan:get_dataplan(AccountDb, kzd_call_recordings:type()),
-    case maps:get('tag', Plan, <<"local">>) =/= <<"local">>
-        orelse maps:is_key('att_handler', Plan)
-    of
-        'true' -> {'true', 'local'};
-        'false' -> should_store_recording()
-    end.
-
--spec should_store_recording() -> store_url().
-should_store_recording() ->
-    case media_config:should_store_recordings() of
-        'true' -> {'true', 'local'};
-        'false' -> 'false'
-    end.
-
 -spec save_recording(store_info()) -> 'ok'.
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
@@ -463,12 +418,14 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     Data = kz_recording:data(JObj, kz_json:new()),
     DocId = kz_recording:id(JObj),
     {Year, Month, _} = erlang:date(),
-    AccountDb = kzs_util:format_account_modb(kazoo_modb:get_modb(AccountId, Year, Month),'encoded'),
+    AccountDb = kzs_util:format_account_modb(
+                  kazoo_modb:get_modb(AccountId, Year, Month), 'encoded'
+                 ),
     CallId = kz_call_event:call_id(JObj),
     CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
     InteractionId = kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
-    ShouldStore = should_store_recording(AccountId, Url),
+    ShouldStore = kapps_call_recording:should_store_recording(AccountId, Url),
     Verb = kz_json:get_ne_binary_value(<<"method">>, Data, <<"put">>),
     Origin = kz_json:get_ne_binary_value(<<"origin">>, Data, <<"no origin">>),
     EndpointId = kz_json:get_ne_binary_value(<<"endpoint_id">>, Data),
