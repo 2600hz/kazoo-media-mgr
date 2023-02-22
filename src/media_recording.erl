@@ -71,6 +71,24 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
+-define(WIRETAP_DB, <<"wiretap-recordings">>).
+-define(WIRETAP_STORAGE_RETRY_TIMES
+        ,kapps_config:get_integer(?CONFIG_CAT
+                                  ,<<"wiretap_storage_retry_times">>
+                                  ,5
+                                 )
+       ).
+-define(WIRETAP_DIR, kapps_config:get(?CONFIG_CAT
+                                     ,<<"wiretap_storage_dir">>
+                                     ,<<"/tmp/wiretap">>
+                                     )
+        ).
+-define(WIRETAP_SHOUD_STORE, kapps_config:get(?CONFIG_CAT
+                                              ,<<"wiretap_should_store">>
+                                              ,{'true', 'local'}
+                                              )
+        ).
+
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
     gen_listener:start_link(?SERVER
@@ -384,6 +402,16 @@ check_url_param(Param) ->
     end.
 
 -spec save_recording(store_info()) -> 'ok'.
+save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
+    UpdatedStore = update_wiretap_store_info(Store),
+    case maybe_store_recording_meta(UpdatedStore) of
+        {'error', Err} ->
+            lager:warning("error storing wiretap recording metadata : ~p", [Err]),
+            gen_server:cast(Pid, {'store_failed', UpdatedStore});
+        Rev ->
+            StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
+            store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, UpdatedStore)
+    end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
 save_recording(#{media := Media, pid := Pid}=Store) ->
@@ -467,3 +495,41 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
         'undefined' -> StoreInfo;
         DefaultUserMetadata -> StoreInfo#{user_metadata => DefaultUserMetadata}
     end.
+
+%%------------------------------------------------------------------------------
+%% @doc Update the Store info to match wiretap configurations
+%% @end
+%%------------------------------------------------------------------------------
+-spec update_wiretap_store_info(store_info()) -> store_info().
+update_wiretap_store_info(#{media := {_, MediaName}
+                           ,extension := Ext
+                           ,doc_id := DocId
+                           ,cdr_id := CdrId
+                           ,interaction_id := InteractionId
+                           ,verb := Verb
+                           ,url := Url
+                           ,account_id := AccountId
+                           ,call_id := CallId
+                           ,event := JObj
+                           ,endpoint_id := EndpointId
+                           ,origin := Origin
+                           ,pid := Pid
+                           }=Store) ->
+    UpdatedStoreInfo = #{url => Url
+            ,media => {?WIRETAP_DIR, MediaName}
+            ,extension => Ext
+            ,doc_id => DocId
+            ,doc_db => map:update('doc_db', ?WIRETAP_DB, Store)
+            ,cdr_id => CdrId
+            ,interaction_id => InteractionId
+            ,should_store => ?WIRETAP_SHOUD_STORE
+            ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
+            ,verb => Verb
+            ,account_id => AccountId
+            ,endpoint_id => EndpointId
+            ,call_id => CallId
+            ,event => JObj
+            ,origin => Origin
+            ,pid => Pid
+            },
+    UpdatedStoreInfo.
