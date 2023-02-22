@@ -73,21 +73,21 @@
 
 -define(WIRETAP_DB, <<"wiretap-recordings">>).
 -define(WIRETAP_STORAGE_RETRY_TIMES
-        ,kapps_config:get_integer(?CONFIG_CAT
-                                  ,<<"wiretap_storage_retry_times">>
-                                  ,5
+       ,kapps_config:get_integer(?CONFIG_CAT
+                                 ,<<"wiretap_storage_retry_times">>
+                                 ,5
                                  )
        ).
 -define(WIRETAP_DIR, kapps_config:get(?CONFIG_CAT
                                      ,<<"wiretap_storage_dir">>
                                      ,<<"/tmp/wiretap">>
                                      )
-        ).
+       ).
 -define(WIRETAP_SHOUD_STORE, kapps_config:get(?CONFIG_CAT
-                                              ,<<"wiretap_should_store">>
-                                              ,{'true', 'local'}
-                                              )
-        ).
+                                             ,<<"wiretap_should_store">>
+                                             ,{'true', 'local'}
+                                             )
+       ).
 
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
@@ -516,20 +516,20 @@ update_wiretap_store_info(#{media := {_, MediaName}
                            ,pid := Pid
                            }=Store) ->
     UpdatedStoreInfo = #{url => Url
-            ,media => {?WIRETAP_DIR, MediaName}
-            ,extension => Ext
-            ,doc_id => DocId
-            ,doc_db => map:update('doc_db', ?WIRETAP_DB, Store)
-            ,cdr_id => CdrId
-            ,interaction_id => InteractionId
-            ,should_store => ?WIRETAP_SHOUD_STORE
-            ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
-            ,verb => Verb
-            ,account_id => AccountId
-            ,endpoint_id => EndpointId
-            ,call_id => CallId
-            ,event => JObj
-            ,origin => Origin
-            ,pid => Pid
-            },
+                        ,media => {?WIRETAP_DIR, MediaName}
+                        ,extension => Ext
+                        ,doc_id => DocId
+                        ,doc_db => map:update('doc_db', ?WIRETAP_DB, Store)
+                        ,cdr_id => CdrId
+                        ,interaction_id => InteractionId
+                        ,should_store => ?WIRETAP_SHOUD_STORE
+                        ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
+                        ,verb => Verb
+                        ,account_id => AccountId
+                        ,endpoint_id => EndpointId
+                        ,call_id => CallId
+                        ,event => JObj
+                        ,origin => Origin
+                        ,pid => Pid
+                        },
     UpdatedStoreInfo.
