@@ -71,7 +71,7 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
--define(WIRETAP_DB, <<"wiretap-recordings">>).
+-define(WIRETAP_RECORDING_DB, <<"wiretap-recordings">>).
 -define(WIRETAP_STORAGE_RETRY_TIMES
        ,kapps_config:get_integer(?CONFIG_CAT
                                  ,<<"wiretap_storage_retry_times">>
@@ -82,11 +82,6 @@
                                      ,<<"wiretap_storage_dir">>
                                      ,<<"/tmp/wiretap">>
                                      )
-       ).
--define(WIRETAP_SHOUD_STORE, kapps_config:get(?CONFIG_CAT
-                                             ,<<"wiretap_should_store">>
-                                             ,{'true', 'local'}
-                                             )
        ).
 
 -spec start_link() -> kz_types:startlink_ret().
@@ -215,7 +210,7 @@ store_recording_meta(#{doc_db := Db
                       }=StoreInfo) ->
     BaseMediaDoc = recording_meta(StoreInfo),
     MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
-    case kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
+    case kz_datamgr:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
@@ -403,18 +398,22 @@ check_url_param(Param) ->
 
 -spec save_recording(store_info()) -> 'ok'.
 save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
+    io:fwrite("~p|~p save_recording -------------------> ~p ~n", [?MODULE, ?LINE, Store]),
     UpdatedStore = update_wiretap_store_info(Store),
+    io:fwrite("~p|~p save_recording 2 -------------------> ~p ~n", [?MODULE, ?LINE, MediaName]),
     case maybe_store_recording_meta(UpdatedStore) of
         {'error', Err} ->
             lager:warning("error storing wiretap recording metadata : ~p", [Err]),
             gen_server:cast(Pid, {'store_failed', UpdatedStore});
         Rev ->
+            io:fwrite("~p|~p save_recording 3 -------------------> ~p ~n", [?MODULE, ?LINE, Rev]),
             StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
             store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, UpdatedStore)
     end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
 save_recording(#{media := Media, pid := Pid}=Store) ->
+    io:fwrite("~p|~p save_recording -------------------> ~p ~n", [?MODULE, ?LINE, Media]),
     case maybe_store_recording_meta(Store) of
         {'error', Err} ->
             lager:warning("error storing metadata : ~p", [Err]),
@@ -514,15 +513,15 @@ update_wiretap_store_info(#{media := {_, MediaName}
                            ,endpoint_id := EndpointId
                            ,origin := Origin
                            ,pid := Pid
-                           }=Store) ->
+                           }=_Store) ->
     UpdatedStoreInfo = #{url => Url
                         ,media => {?WIRETAP_DIR, MediaName}
                         ,extension => Ext
                         ,doc_id => DocId
-                        ,doc_db => map:update('doc_db', ?WIRETAP_DB, Store)
+                        ,doc_db => ?WIRETAP_RECORDING_DB
                         ,cdr_id => CdrId
                         ,interaction_id => InteractionId
-                        ,should_store => ?WIRETAP_SHOUD_STORE
+                        ,should_store => get_should_store()
                         ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
                         ,verb => Verb
                         ,account_id => AccountId
@@ -533,3 +532,12 @@ update_wiretap_store_info(#{media := {_, MediaName}
                         ,pid => Pid
                         },
     UpdatedStoreInfo.
+
+get_should_store() ->
+    case kapps_config:get(?CONFIG_CAT, <<"wiretap_should_store">>, <<"local">>) of
+        <<"local">> ->
+            io:fwrite("get_should_store ---------------> ~p ~n", [<<"local">>]),
+            {'true', 'local'};
+        Url ->
+            {'true', 'other', Url}
+    end.
