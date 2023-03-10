@@ -78,11 +78,6 @@
                                  ,5
                                  )
        ).
--define(WIRETAP_DIR, kapps_config:get(?CONFIG_CAT
-                                     ,<<"wiretap_storage_dir">>
-                                     ,<<"/tmp/wiretap">>
-                                     )
-       ).
 
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
@@ -411,7 +406,7 @@ check_url_param(Param) ->
     end.
 
 -spec save_recording(store_info()) -> 'ok'.
-save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
+save_recording(#{media := {MediaDir, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
     UpdatedStore = update_wiretap_store_info(Store),
     case maybe_store_recording_meta(UpdatedStore) of
         {'error', Err} ->
@@ -420,10 +415,10 @@ save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid :=
         {Rev, Doc} ->
             NewUpdatedStore = UpdatedStore#{doc_id => kz_doc:id(Doc)},
             StoreUrl = fun()-> store_url(NewUpdatedStore, Rev) end,
-            store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, NewUpdatedStore);
+            store_recording({MediaDir, MediaName}, StoreUrl, NewUpdatedStore);
         Rev ->
             StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
-            store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, UpdatedStore)
+            store_recording({MediaDir, MediaName}, StoreUrl, UpdatedStore)
     end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
@@ -514,7 +509,7 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec update_wiretap_store_info(store_info()) -> store_info().
-update_wiretap_store_info(#{media := {_, MediaName}
+update_wiretap_store_info(#{media := Media
                            ,extension := Ext
                            ,doc_id := DocId
                            ,cdr_id := CdrId
@@ -529,7 +524,7 @@ update_wiretap_store_info(#{media := {_, MediaName}
                            ,pid := Pid
                            }) ->
     UpdatedStoreInfo = #{url => Url
-                        ,media => {?WIRETAP_DIR, MediaName}
+                        ,media => Media
                         ,extension => Ext
                         ,doc_id => DocId
                         ,doc_db => ?WIRETAP_RECORDING_DB
