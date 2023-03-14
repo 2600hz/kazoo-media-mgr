@@ -205,13 +205,17 @@ store_recording_meta(#{doc_db := Db
                       }=StoreInfo) ->
     BaseMediaDoc = recording_meta(StoreInfo),
     MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
-    case kz_datamgr:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
+    case save_recording_doc(Db, MediaDoc) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
         {'error', _}= Err -> Err
     end.
 
+save_recording_doc(?WIRETAP_RECORDING_DB, MediaDoc) ->
+    kz_datamgr:save_doc(?WIRETAP_RECORDING_DB, MediaDoc, [{'ensure_saved', 'true'}]);
+save_recording_doc(Db, MediaDoc) ->
+    kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]).
 %%------------------------------------------------------------------------------
 %% @doc Get the recording metadata to be stored from the store info.
 %% @end
