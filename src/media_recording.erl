@@ -199,20 +199,6 @@ code_change(_OldVsn, State, _Extra) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
-store_recording_meta(#{doc_db := ?WIRETAP_RECORDING_DB
-                      ,doc_id := DocId
-                      ,account_id := AccountId
-                      }=StoreInfo) ->
-    BaseMediaDoc = recording_meta(StoreInfo),
-    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, ?WIRETAP_RECORDING_DB, [{'type', kzd_call_recordings:type()}
-                                                              ,{'pvt_account_id', AccountId}
-                                                              ]),
-    case kz_datamgr:save_doc(?WIRETAP_RECORDING_DB, MediaDoc, [{'ensure_saved', 'true'}]) of
-        {'ok', Doc} ->
-            lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
-            {kz_doc:revision(Doc), Doc};
-        {'error', _}= Err -> Err
-    end;
 store_recording_meta(#{doc_db := Db
                       ,doc_id := DocId
                       ,account_id := AccountId
@@ -412,10 +398,6 @@ save_recording(#{media := {MediaDir, <<"wiretap-",(_UUID)/binary>> = MediaName},
         {'error', Err} ->
             lager:warning("error storing wiretap recording metadata : ~p", [Err]),
             gen_server:cast(Pid, {'store_failed', UpdatedStore});
-        {Rev, Doc} ->
-            NewUpdatedStore = UpdatedStore#{doc_id => kz_doc:id(Doc)},
-            StoreUrl = fun()-> store_url(NewUpdatedStore, Rev) end,
-            store_recording({MediaDir, MediaName}, StoreUrl, NewUpdatedStore);
         Rev ->
             StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
             store_recording({MediaDir, MediaName}, StoreUrl, UpdatedStore)
