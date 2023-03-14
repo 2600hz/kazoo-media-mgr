@@ -74,9 +74,9 @@
 -define(WIRETAP_RECORDING_DB, <<"wiretap-recordings">>).
 -define(WIRETAP_STORAGE_RETRY_TIMES
        ,kapps_config:get_integer(?CONFIG_CAT
-                                 ,<<"wiretap_storage_retry_times">>
-                                 ,5
-                                 )
+                                ,<<"wiretap_storage_retry_times">>
+                                ,5
+                                )
        ).
 
 -spec start_link() -> kz_types:startlink_ret().
