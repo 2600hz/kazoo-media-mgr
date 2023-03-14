@@ -71,6 +71,14 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
+-define(WIRETAP_RECORDING_DB, <<"wiretap-recordings">>).
+-define(WIRETAP_STORAGE_RETRY_TIMES
+       ,kapps_config:get_integer(?CONFIG_CAT
+                                 ,<<"wiretap_storage_retry_times">>
+                                 ,5
+                                 )
+       ).
+
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
     gen_listener:start_link(?SERVER
@@ -197,7 +205,7 @@ store_recording_meta(#{doc_db := Db
                       }=StoreInfo) ->
     BaseMediaDoc = recording_meta(StoreInfo),
     MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
-    case kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
+    case kz_datamgr:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
@@ -314,7 +322,7 @@ store_url(#{doc_db := Db
                    ,field_separator => <<>>
                    ,field_list => handler_fields(Url, Store)
                    },
-    AttHandler = handler_from_url(Url),
+    AttHandler = kapps_call_recording:handler_from_url(Url),
     Handler = #{att_proxy => 'true'
                ,att_post_handler => 'external'
                ,att_handler => {AttHandler, HandlerOpts}
@@ -383,52 +391,17 @@ check_url_param(Param) ->
         _ -> <<"&recording=">>
     end.
 
--spec handler_from_url(kz_term:ne_binary()) ->
-          'kz_att_ftp' | 'kz_att_sftp' | 'kz_att_http' | 'undefined'.
-handler_from_url(Url) ->
-    case kz_http_util:urlsplit(Url) of
-        {<<"ftp">>, _, _, _, _} -> 'kz_att_ftp';
-        {<<"ftps">>, _, _, _, _} -> 'kz_att_ftp';
-        {<<"sftp">>, _, _, _, _} -> 'kz_att_sftp';
-        {<<"http">>, _, _, _, _} -> 'kz_att_http';
-        {<<"https">>, _, _, _, _} -> 'kz_att_http';
-        _ -> 'undefined'
-    end.
-
--spec should_store_recording(kz_term:ne_binary(), kz_term:api_binary()) -> store_url().
-should_store_recording(AccountId, Url) ->
-    case kz_term:is_empty(Url) of
-        'true' -> maybe_storage_plan(AccountId);
-        'false' ->
-            case handler_from_url(Url) of
-                'undefined' ->
-                    lager:debug("invalid protocol for url ~s : not saving attachment"
-                               ,[kz_log:redactor(Url)]
-                               ),
-                    'false';
-                _ -> {'true', 'other', Url}
-            end
-    end.
-
--spec maybe_storage_plan(kz_term:ne_binary()) -> store_url().
-maybe_storage_plan(AccountId) ->
-    AccountDb = kzs_util:format_account_mod_id(AccountId),
-    Plan = kzs_plan:get_dataplan(AccountDb, kzd_call_recordings:type()),
-    case maps:get('tag', Plan, <<"local">>) =/= <<"local">>
-        orelse maps:is_key('att_handler', Plan)
-    of
-        'true' -> {'true', 'local'};
-        'false' -> should_store_recording()
-    end.
-
--spec should_store_recording() -> store_url().
-should_store_recording() ->
-    case media_config:should_store_recordings() of
-        'true' -> {'true', 'local'};
-        'false' -> 'false'
-    end.
-
 -spec save_recording(store_info()) -> 'ok'.
+save_recording(#{media := {MediaDir, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
+    UpdatedStore = update_wiretap_store_info(Store),
+    case maybe_store_recording_meta(UpdatedStore) of
+        {'error', Err} ->
+            lager:warning("error storing wiretap recording metadata : ~p", [Err]),
+            gen_server:cast(Pid, {'store_failed', UpdatedStore});
+        Rev ->
+            StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
+            store_recording({MediaDir, MediaName}, StoreUrl, UpdatedStore)
+    end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
 save_recording(#{media := Media, pid := Pid}=Store) ->
@@ -463,12 +436,14 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     Data = kz_recording:data(JObj, kz_json:new()),
     DocId = kz_recording:id(JObj),
     {Year, Month, _} = erlang:date(),
-    AccountDb = kzs_util:format_account_modb(kazoo_modb:get_modb(AccountId, Year, Month),'encoded'),
+    AccountDb = kzs_util:format_account_modb(
+                  kazoo_modb:get_modb(AccountId, Year, Month), 'encoded'
+                 ),
     CallId = kz_call_event:call_id(JObj),
     CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
     InteractionId = kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
-    ShouldStore = should_store_recording(AccountId, Url),
+    ShouldStore = kapps_call_recording:should_store_recording(AccountId, Url),
     Verb = kz_json:get_ne_binary_value(<<"method">>, Data, <<"put">>),
     Origin = kz_json:get_ne_binary_value(<<"origin">>, Data, <<"no origin">>),
     EndpointId = kz_json:get_ne_binary_value(<<"endpoint_id">>, Data),
@@ -509,4 +484,50 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
     of
         'undefined' -> StoreInfo;
         DefaultUserMetadata -> StoreInfo#{user_metadata => DefaultUserMetadata}
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc Update the Store info to match wiretap configurations
+%% @end
+%%------------------------------------------------------------------------------
+-spec update_wiretap_store_info(store_info()) -> store_info().
+update_wiretap_store_info(#{media := Media
+                           ,extension := Ext
+                           ,doc_id := DocId
+                           ,cdr_id := CdrId
+                           ,interaction_id := InteractionId
+                           ,verb := Verb
+                           ,url := Url
+                           ,account_id := AccountId
+                           ,call_id := CallId
+                           ,event := JObj
+                           ,endpoint_id := EndpointId
+                           ,origin := Origin
+                           ,pid := Pid
+                           }) ->
+    UpdatedStoreInfo = #{url => Url
+                        ,media => Media
+                        ,extension => Ext
+                        ,doc_id => DocId
+                        ,doc_db => ?WIRETAP_RECORDING_DB
+                        ,cdr_id => CdrId
+                        ,interaction_id => InteractionId
+                        ,should_store => get_should_store()
+                        ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
+                        ,verb => Verb
+                        ,account_id => AccountId
+                        ,endpoint_id => EndpointId
+                        ,call_id => CallId
+                        ,event => JObj
+                        ,origin => Origin
+                        ,pid => Pid
+                        },
+    UpdatedStoreInfo.
+
+get_should_store() ->
+    case kapps_config:get(?CONFIG_CAT ,<<"wiretap_should_store">>, <<"local">>) of
+        <<"local">> ->
+            {'true', 'local'};
+        Url ->
+            {'true', 'other', Url}
     end.
