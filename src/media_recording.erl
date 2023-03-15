@@ -71,7 +71,7 @@
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
--define(WIRETAP_RECORDING_DB, <<"wiretap-recordings">>).
+-define(WIRETAP_DB, <<"system_wiretap">>).
 -define(WIRETAP_STORAGE_RETRY_TIMES
        ,kapps_config:get_integer(?CONFIG_CAT
                                 ,<<"wiretap_storage_retry_times">>
@@ -212,8 +212,8 @@ store_recording_meta(#{doc_db := Db
         {'error', _}= Err -> Err
     end.
 
-save_recording_doc(?WIRETAP_RECORDING_DB, MediaDoc) ->
-    kz_datamgr:save_doc(?WIRETAP_RECORDING_DB, MediaDoc, [{'ensure_saved', 'true'}]);
+save_recording_doc(?WIRETAP_DB, MediaDoc) ->
+    kz_datamgr:save_doc(?WIRETAP_DB, MediaDoc, [{'ensure_saved', 'true'}]);
 save_recording_doc(Db, MediaDoc) ->
     kazoo_modb:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]).
 %%------------------------------------------------------------------------------
@@ -396,19 +396,18 @@ check_url_param(Param) ->
     end.
 
 -spec save_recording(store_info()) -> 'ok'.
-save_recording(#{media := {MediaDir, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
-    UpdatedStore = update_wiretap_store_info(Store),
-    case maybe_store_recording_meta(UpdatedStore) of
-        {'error', Err} ->
-            lager:warning("error storing wiretap recording metadata : ~p", [Err]),
-            gen_server:cast(Pid, {'store_failed', UpdatedStore});
-        Rev ->
-            StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
-            store_recording({MediaDir, MediaName}, StoreUrl, UpdatedStore)
-    end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
-save_recording(#{media := Media, pid := Pid}=Store) ->
+save_recording(#{media := Media, pid := Pid, event:= Event}=Store) ->
+    case kz_json:get_value([<<"Recording">>, <<"Is-Wiretap">>], Event, <<"false">>) of
+        <<"false">> ->
+            UpdatedStore = Store;
+        <<"true">> ->
+            UpdatedStore = update_wiretap_store_info(Store)
+    end,
+    maybe_store_recording(Media, UpdatedStore, Pid).
+
+maybe_store_recording(Media, Store, Pid) ->
     case maybe_store_recording_meta(Store) of
         {'error', Err} ->
             lager:warning("error storing metadata : ~p", [Err]),
@@ -513,7 +512,7 @@ update_wiretap_store_info(#{media := Media
                         ,media => Media
                         ,extension => Ext
                         ,doc_id => DocId
-                        ,doc_db => ?WIRETAP_RECORDING_DB
+                        ,doc_db => ?WIRETAP_DB
                         ,cdr_id => CdrId
                         ,interaction_id => InteractionId
                         ,should_store => get_should_store()
