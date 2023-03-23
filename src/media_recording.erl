@@ -398,23 +398,22 @@ check_url_param(Param) ->
 -spec save_recording(store_info()) -> 'ok'.
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
-save_recording(#{media := Media, pid := Pid, event:= Event}=Store) ->
-    case kz_json:get_value([<<"Recording">>, <<"Is-Wiretap">>], Event, <<"false">>) of
-        <<"false">> ->
-            UpdatedStore = Store;
-        <<"true">> ->
-            UpdatedStore = update_wiretap_store_info(Store)
-    end,
-    maybe_store_recording(Media, UpdatedStore, Pid).
-
-maybe_store_recording(Media, Store, Pid) ->
-    case maybe_store_recording_meta(Store) of
+save_recording(#{media := Media, pid := Pid}=Store) ->
+    UpdatedStore = maybe_add_wiretap_info(Store),
+    case maybe_store_recording_meta(UpdatedStore) of
         {'error', Err} ->
             lager:warning("error storing metadata : ~p", [Err]),
-            gen_server:cast(Pid, {'store_failed', Store});
+            gen_server:cast(Pid, {'store_failed', UpdatedStore});
         Rev ->
-            StoreUrl = fun()-> store_url(Store, Rev) end,
-            store_recording(Media, StoreUrl, Store)
+            StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
+            store_recording(Media, StoreUrl, UpdatedStore)
+    end.
+
+-spec maybe_add_wiretap_info(store_info()) -> store_info().
+maybe_add_wiretap_info(#{event:= Event}=Store) ->
+    case kz_json:is_true([<<"Recording">>, <<"Is-Wiretap">>], Event, 'false') of
+        'false' -> Store;
+        'true' -> update_wiretap_store_info(Store)
     end.
 
 -spec store_recording(kz_recording:media(), kz_term:ne_binary() | function(), store_info()) -> 'ok'.
@@ -494,41 +493,14 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec update_wiretap_store_info(store_info()) -> store_info().
-update_wiretap_store_info(#{media := Media
-                           ,extension := Ext
-                           ,doc_id := DocId
-                           ,cdr_id := CdrId
-                           ,interaction_id := InteractionId
-                           ,verb := Verb
-                           ,url := Url
-                           ,account_id := AccountId
-                           ,call_id := CallId
-                           ,event := JObj
-                           ,endpoint_id := EndpointId
-                           ,origin := Origin
-                           ,pid := Pid
-                           }) ->
-    UpdatedStoreInfo = #{url => Url
-                        ,media => Media
-                        ,extension => Ext
-                        ,doc_id => DocId
-                        ,doc_db => ?WIRETAP_DB
-                        ,cdr_id => CdrId
-                        ,interaction_id => InteractionId
-                        ,should_store => get_should_store()
-                        ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
-                        ,verb => Verb
-                        ,account_id => AccountId
-                        ,endpoint_id => EndpointId
-                        ,call_id => CallId
-                        ,event => JObj
-                        ,origin => Origin
-                        ,pid => Pid
-                        },
-    UpdatedStoreInfo.
+update_wiretap_store_info(Store) ->
+    Store#{doc_db => ?WIRETAP_DB
+          ,should_store => get_should_store()
+          ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
+          }.
 
 get_should_store() ->
-    case kapps_config:get(?CONFIG_CAT ,<<"wiretap_should_store">>, <<"local">>) of
+    case kapps_config:get_ne_binary(?CONFIG_CAT ,<<"wiretap_should_store">>, <<"local">>) of
         <<"local">> ->
             {'true', 'local'};
         Url ->
