@@ -4,6 +4,8 @@
 -include_lib("kazoo_stdlib/include/kz_log.hrl").
 -include_lib("kazoo_stdlib/include/kz_databases.hrl").
 
+-define(APP, media_srv).
+-define(CONFIG_APP, media).
 -define(APP_NAME, <<"media_srv">>).
 -define(APP_VERSION, <<"4.0.0">>).
 -define(CONFIG_CAT, <<"media">>).
