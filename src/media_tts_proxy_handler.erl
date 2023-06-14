@@ -24,13 +24,14 @@
 
 -spec init(cowboy_req:req(), map()) -> {'ok', cowboy_req:req(), state() | 'ok'}.
 init(Req, #{id := Id, type := StreamType}) ->
-    lager:debug("fetching tts/~s", [Id]),
-    try media_cache_sup:find_tts_server(Id) of
+    TTSId = filename:rootname(Id),
+    lager:debug("fetching tts/~s", [TTSId]),
+    try media_cache_sup:find_tts_server(TTSId) of
         {'ok', Pid} ->
             {Meta, Bin} = media_data(Pid, StreamType),
             handle(Req, ?STATE(Meta, Bin));
         {'error', _E} ->
-            lager:debug("missing tts server for ~s: ~p", [Id, _E]),
+            lager:debug("missing tts server for ~s: ~p", [TTSId, _E]),
             Req1 = cowboy_req:reply(404, Req),
             {'ok', Req1, 'ok'}
     catch
@@ -83,4 +84,4 @@ terminate(_Reason, _Req, _State) ->
 
 -spec media_data(pid(), stream_type()) -> {kz_json:object(), binary()}.
 media_data(Pid, Function) ->
-    media_file_cache:Function(Pid).
+    media_tts_cache:Function(Pid).
