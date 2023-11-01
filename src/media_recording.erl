@@ -204,15 +204,15 @@ code_change(_OldVsn, State, _Extra) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
-store_recording_meta(#{doc_db := ?WIRETAP_DB
+store_recording_meta(#{doc_db := ?WIRETAP_RECORDING_DB
                       ,doc_id := DocId
                       ,account_id := AccountId
                       }=StoreInfo) ->
     BaseMediaDoc = recording_meta(StoreInfo),
-    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, ?WIRETAP_DB, [{'type', kzd_call_recordings:type()}
+    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, ?WIRETAP_RECORDING_DB, [{'type', kzd_call_recordings:type()}
                                                               ,{'pvt_account_id', AccountId}
                                                               ]),
-    case kz_datamgr:save_doc(?WIRETAP_DB, MediaDoc, [{'ensure_saved', 'true'}]) of
+    case kz_datamgr:save_doc(?WIRETAP_RECORDING_DB, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
             kz_doc:revision(Doc);
