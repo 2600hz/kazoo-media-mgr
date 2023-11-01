@@ -215,7 +215,7 @@ store_recording_meta(#{doc_db := ?WIRETAP_RECORDING_DB
     case kz_datamgr:save_doc(?WIRETAP_RECORDING_DB, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
-            kz_doc:revision(Doc);
+            {kz_doc:revision(Doc), Doc};
         {'error', _}= Err -> Err
     end;
 store_recording_meta(#{doc_db := Db
@@ -417,6 +417,10 @@ save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid :=
         {'error', Err} ->
             lager:warning("error storing wiretap recording metadata : ~p", [Err]),
             gen_server:cast(Pid, {'store_failed', UpdatedStore});
+        {Rev, Doc} ->
+            NewUpdatedStore = UpdatedStore#{doc_id => kz_doc:id(Doc)},
+            StoreUrl = fun()-> store_url(NewUpdatedStore, Rev) end,
+            store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, NewUpdatedStore);
         Rev ->
             StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
             store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, UpdatedStore)

@@ -93,7 +93,5 @@ store(Db, Id, Attachment) ->
           build_media_url_ret().
 store(Db, {Type, Id}, Attachment, Options) ->
     store(Db, Id, Attachment, [{'doc_type', Type} | Options]);
-% store(Db, ?NE_BINARY = Id, Attachment, Options) ->
-%     media_file:get_uri([Db, Id, Attachment, Options], ?STREAM_TYPE_STORE).
-store(Db, _Id, Attachment, Options) ->
-    media_file:get_uri([Db, <<"202303-851524629e0d9822fb57d7c396720144">>, Attachment, Options], ?STREAM_TYPE_STORE).
+store(Db, ?NE_BINARY = Id, Attachment, Options) ->
+    media_file:get_uri([Db, Id, Attachment, Options], ?STREAM_TYPE_STORE).
