@@ -83,11 +83,6 @@
                                      ,<<"/tmp/wiretap">>
                                      )
        ).
--define(WIRETAP_SHOUD_STORE, kapps_config:get(?CONFIG_CAT
-                                             ,<<"wiretap_should_store">>
-                                             ,{'true', 'local'}
-                                             )
-       ).
 
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
@@ -209,6 +204,20 @@ code_change(_OldVsn, State, _Extra) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
+store_recording_meta(#{doc_db := ?WIRETAP_DB
+                      ,doc_id := DocId
+                      ,account_id := AccountId
+                      }=StoreInfo) ->
+    BaseMediaDoc = recording_meta(StoreInfo),
+    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, ?WIRETAP_DB, [{'type', kzd_call_recordings:type()}
+                                                              ,{'pvt_account_id', AccountId}
+                                                              ]),
+    case kz_datamgr:save_doc(?WIRETAP_DB, MediaDoc, [{'ensure_saved', 'true'}]) of
+        {'ok', Doc} ->
+            lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
+            kz_doc:revision(Doc);
+        {'error', _}= Err -> Err
+    end;
 store_recording_meta(#{doc_db := Db
                       ,doc_id := DocId
                       ,account_id := AccountId
@@ -514,15 +523,15 @@ update_wiretap_store_info(#{media := {_, MediaName}
                            ,endpoint_id := EndpointId
                            ,origin := Origin
                            ,pid := Pid
-                           }=Store) ->
+                           }) ->
     UpdatedStoreInfo = #{url => Url
                         ,media => {?WIRETAP_DIR, MediaName}
                         ,extension => Ext
                         ,doc_id => DocId
-                        ,doc_db => map:update('doc_db', ?WIRETAP_DB, Store)
+                        ,doc_db => ?WIRETAP_DB
                         ,cdr_id => CdrId
                         ,interaction_id => InteractionId
-                        ,should_store => ?WIRETAP_SHOUD_STORE
+                        ,should_store => get_should_store()
                         ,retries => ?WIRETAP_STORAGE_RETRY_TIMES
                         ,verb => Verb
                         ,account_id => AccountId
@@ -533,3 +542,11 @@ update_wiretap_store_info(#{media := {_, MediaName}
                         ,pid => Pid
                         },
     UpdatedStoreInfo.
+
+get_should_store() ->
+    case kapps_config:get(?CONFIG_CAT ,<<"wiretap_should_store">>, <<"local">>) of
+        <<"local">> ->
+            {'true', 'local'};
+        Url ->
+            {'true', 'other', Url}
+    end.
