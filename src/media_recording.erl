@@ -412,22 +412,18 @@ check_url_param(Param) ->
 
 -spec save_recording(store_info()) -> 'ok'.
 save_recording(#{media := {_, <<"wiretap-",(_UUID)/binary>> = MediaName}, pid := Pid}= Store) ->
-    io:fwrite("~p|~p save_recording -------------------> ~p ~n", [?MODULE, ?LINE, Store]),
     UpdatedStore = update_wiretap_store_info(Store),
-    io:fwrite("~p|~p save_recording 2 -------------------> ~p ~n", [?MODULE, ?LINE, MediaName]),
     case maybe_store_recording_meta(UpdatedStore) of
         {'error', Err} ->
             lager:warning("error storing wiretap recording metadata : ~p", [Err]),
             gen_server:cast(Pid, {'store_failed', UpdatedStore});
         Rev ->
-            io:fwrite("~p|~p save_recording 3 -------------------> ~p ~n", [?MODULE, ?LINE, Rev]),
             StoreUrl = fun()-> store_url(UpdatedStore, Rev) end,
             store_recording({?WIRETAP_DIR, MediaName}, StoreUrl, UpdatedStore)
     end;
 save_recording(#{media := {_, MediaName}, should_store := 'false'}) ->
     lager:info("not configured to store recording ~s", [MediaName]);
 save_recording(#{media := Media, pid := Pid}=Store) ->
-    io:fwrite("~p|~p save_recording -------------------> ~p ~n", [?MODULE, ?LINE, Media]),
     case maybe_store_recording_meta(Store) of
         {'error', Err} ->
             lager:warning("error storing metadata : ~p", [Err]),
