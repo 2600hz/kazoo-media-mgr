@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2022, 2600Hz
+%%% @copyright (C) 2012-2024, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -432,7 +432,17 @@ store_recording({DirName, MediaName}, StoreUrl, #{event := JObj, pid := Pid} = M
 
 -spec maybe_save_recording(pid(), kz_json:object()) -> 'ok'.
 maybe_save_recording(Pid, RecordStop) ->
-    maybe_save_recording(Pid, RecordStop, kz_recording:recorder(RecordStop)).
+    case is_channel_loopback_bowout(RecordStop) of
+        'false' ->
+            maybe_save_recording(Pid, RecordStop, kz_recording:recorder(RecordStop));
+        'true' ->
+            lager:info("recording not stored since it was done in a loopback bowout leg")
+    end.
+
+-spec is_channel_loopback_bowout(kz_json:object()) -> boolean().
+is_channel_loopback_bowout(RecordStop) ->
+    kz_json:is_true(<<"Channel-Is-Loopback">>, RecordStop)
+        andalso kz_json:is_true(<<"Channel-Loopback-Bowout">>, RecordStop).
 
 -spec maybe_save_recording(pid(), kz_json:object(), kz_term:api_ne_binary()) -> 'ok'.
 maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
