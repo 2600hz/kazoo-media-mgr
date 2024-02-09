@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2024, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -74,7 +74,7 @@ additional_kapi_bindings() ->
 
 -spec bindings() -> gen_listener:bindings().
 bindings() ->
-    [{kz_term:to_atom(KAPI, true), [{'restrict_to', ['RECORD_STOP']}]} || KAPI <- additional_kapi_bindings()] ++ ?BINDINGS.
+    [{kz_term:to_atom(KAPI, 'true'), [{'restrict_to', ['RECORD_STOP']}]} || KAPI <- additional_kapi_bindings()] ++ ?BINDINGS.
 
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
@@ -264,13 +264,13 @@ recording_meta(#{media := {_, MediaName}
     maybe_set_user_metadata(StoreInfo, BaseMediaDoc).
 
 -spec meta_account_id(kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_ne_binary().
-meta_account_id(AccountId, AccountId) -> undefined;
+meta_account_id(AccountId, AccountId) -> 'undefined';
 meta_account_id(_AccountId, AccountId) -> AccountId.
 
 -spec recording_vars(kz_json:object()) -> kz_term:api_object().
 recording_vars(Data) ->
     case kz_json:get_json_value(<<"recording_vars">>, Data) of
-        undefined -> undefined;
+        'undefined' -> 'undefined';
         JSON -> kz_json:normalize(JSON)
     end.
 
@@ -427,7 +427,17 @@ store_recording({DirName, MediaName}, StoreUrl, #{event := JObj, pid := Pid} = M
 
 -spec maybe_save_recording(pid(), kz_json:object()) -> 'ok'.
 maybe_save_recording(Pid, RecordStop) ->
-    maybe_save_recording(Pid, RecordStop, kz_recording:recorder(RecordStop)).
+    case is_channel_loopback_bowout(RecordStop) of
+        'false' ->
+            maybe_save_recording(Pid, RecordStop, kz_recording:recorder(RecordStop));
+        'true' ->
+            lager:info("recording not stored since it was done in a loopback bowout leg")
+    end.
+
+-spec is_channel_loopback_bowout(kz_json:object()) -> boolean().
+is_channel_loopback_bowout(RecordStop) ->
+    kz_json:is_true(<<"Channel-Is-Loopback">>, RecordStop)
+        andalso kz_json:is_true(<<"Channel-Loopback-Bowout">>, RecordStop).
 
 -spec maybe_save_recording(pid(), kz_json:object(), kz_term:api_ne_binary()) -> 'ok'.
 maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
@@ -476,19 +486,20 @@ maybe_save_recording(_Pid, _JObj, _Recorder) ->
 recording_db(Data, DefaultDB) ->
     kz_json:get_ne_binary_value(<<"media_db">>, Data, DefaultDB).
 
--spec should_store_recording(kz_json:object(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> boolean().
-should_store_recording(_Data, undefined, _Url) -> false;
+-spec should_store_recording(kz_json:object(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
+          kapps_call_recording:store_url().
+should_store_recording(_Data, 'undefined', _Url) -> 'false';
 should_store_recording(Data, AccountId, Url) ->
     case kz_json:get_boolean_value(<<"should_store_recording">>, Data) of
-        undefined -> kapps_call_recording:should_store_recording(AccountId, Url);
-        true -> {'true', 'local'};
-        false -> false
+        'undefined' -> kapps_call_recording:should_store_recording(AccountId, Url);
+        'true' -> {'true', 'local'};
+        'false' -> 'false'
     end.
 
 -spec storage_retry_times(kz_json:object(), kz_term:api_ne_binary()) -> pos_integer().
 storage_retry_times(Data, AccountId) ->
     case kz_json:get_integer_value(<<"storage_retry_times">>, Data) of
-        undefined -> media_config:storage_retry_times(AccountId);
+        'undefined' -> media_config:storage_retry_times(AccountId);
         Value when Value > 0 -> Value;
         _Other -> media_config:storage_retry_times(AccountId)
     end.
