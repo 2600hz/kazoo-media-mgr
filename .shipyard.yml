@@ -1,7 +1,7 @@
 name: kazoo-application-media_mgr
 custom_files: null
 exposure: private
-base_branch: origin/5.3
+base_branch: origin/5.4
 base_core: kazoo
 template: kazoo-application.spec.tmpl
 package:
@@ -47,6 +47,6 @@ metapackage:
   -
     name: meta-kazoo-applications
     type: required
-    branch: '5.3'
+    branch: '5.4'
     package: kazoo-application-media_mgr
 dependencies: null
