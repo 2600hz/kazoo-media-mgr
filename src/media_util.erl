@@ -326,7 +326,7 @@ maybe_normalize_copy_files([{File, _Other, Format}|Files], SampleRate, Acc) ->
         {'ok', NormFile} ->
             maybe_normalize_copy_files(Files, SampleRate, [{NormFile, SampleRate, Format}|Acc]);
         {'error', _Reason} ->
-            lager:warning("can't normalize file ~s for preforming join media: ~p", [File, _Reason]),
+            lager:warning("can't normalize file ~s for performing join media: ~p", [File, _Reason]),
             %% cleanup already copied files
             _ = [kz_os:delete_file(F) || {F, _, _} <- Files],
             {'error', 'normalization_failed'}
