@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2024, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -42,7 +42,7 @@
                ,contents = <<>> :: binary()
                ,stream_ref :: reference()
                ,status :: 'streaming' | 'ready'
-               ,reqs :: [{pid(), reference()}]
+               ,reqs :: kz_term:pid_refs()
                ,timer_ref :: reference()
                }).
 -type state() :: #state{}.

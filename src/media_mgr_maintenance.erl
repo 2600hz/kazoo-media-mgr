@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2023, 2600Hz
+%%% @copyright (C) 2010-2024, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -22,10 +22,13 @@
         ,refresh/0
         ,register_views/0
         ,fix_media_names/0
+
+        ,flush_tts/0, flush_tts/1
         ]).
 
 -include("media.hrl").
 
+-elvis([{elvis_style, no_debug_call, disable}]).
 
 -spec prompt_url(kz_term:ne_binary()) -> 'ok'.
 prompt_url(PromptId) ->
@@ -495,4 +498,21 @@ fix_media_names() ->
             end;
         {'error', Error} ->
             lager:debug("error '~p' getting media names", [Error])
+    end.
+
+-spec flush_tts() -> 'ok'.
+flush_tts() ->
+    Workers = media_cache_sup:tts_workers(),
+    lists:foreach(fun flush_tts/1, Workers).
+
+-spec flush_tts(kz_term:ne_binary() | {kz_term:ne_binary(), pid()}) -> 'ok'.
+flush_tts(<<TTSId/binary>>) ->
+    case media_cache_sup:stop_worker(TTSId) of
+        'ok' -> io:format("stopped worker ~s~n", [TTSId]);
+        {'error', 'not_found'} -> io:format("failed to find worker for tts ~s~n", [TTSId])
+    end;
+flush_tts({TTSId, WorkerPid}) ->
+    case media_cache_sup:stop_worker(WorkerPid) of
+        'ok' -> io:format("stopped worker ~s~n", [TTSId]);
+        {'error', 'not_found'} -> io:format("failed to find worker for tts ~s~n", [TTSId])
     end.

@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2024, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -19,6 +19,8 @@
 -export([start_file_server/3]).
 -export([find_tts_server/1]).
 -export([find_tts_server/2]).
+
+-export([tts_workers/0, stop_worker/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -89,6 +91,35 @@ find_tts_server(Id, JObj) ->
             find_tts_server(Id, JObj);
         {'error', _}=E -> E
     end.
+
+-spec tts_workers() -> [{kz_term:ne_binary(), pid()}].
+tts_workers() ->
+    [{Id, Pid}
+     || {Id,Pid,_,_} <- supervisor:which_children(?SERVER),
+        is_pid(Pid)
+    ].
+
+-spec stop_worker(kz_term:ne_binary() | pid()) -> 'ok' | {'error', 'not_found'}.
+stop_worker(<<Id/binary>>) ->
+    case find_tts_server(Id) of
+        {'ok', Pid} -> stop_worker(Pid);
+        {'error', _} -> {'error', 'not_found'}
+    end;
+stop_worker(Pid) when is_pid(Pid) ->
+    Ref = erlang:monitor('process', Pid),
+    'ok' = media_tts_cache:stop(Pid),
+    wait_for_down(Pid, Ref).
+
+wait_for_down(Pid, Ref) ->
+    receive
+        {'DOWN', Ref, 'process', Pid, _Reason} -> 'ok'
+    after ?MILLISECONDS_IN_SECOND ->
+            case is_process_alive(Pid) of
+                'false' -> 'ok';
+                'true' -> {'error', 'not_found'} % maybe this wasn't a media tts process after all
+            end
+    end.
+
 
 %%%=============================================================================
 %%% Supervisor callbacks

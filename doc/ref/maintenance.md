@@ -3,6 +3,8 @@
 | Function | Arguments | Description |
 | -------- | --------- | ----------- |
 | `fix_media_names/0` |  | |
+| `flush_tts/0` |  | |
+| `flush_tts/1` | `(TTSId) | (_)` | |
 | `import_prompt/1` | `(Path)` | |
 | `import_prompt/2` | `(Path,Lang)` | |
 | `import_prompts/1` | `(DirPath)` | |
