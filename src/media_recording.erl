@@ -57,10 +57,15 @@
                        ,pid := pid()
                        ,data := kz_json:object()
                        ,user_metadata => kz_json:object()
+                       ,category := event_category()
                        }.
 
+-type event_category() :: 'call' | 'conference'.
+
 %% By convention, we put the options here in macros, but not required.
--define(BINDINGS, [{'call', [{'restrict_to', ['RECORD_STOP']}]}]).
+-define(BINDINGS, [{'call', [{'restrict_to', ['RECORD_STOP']}]}
+                  ,{'conference', [{'restrict_to', [{'event', [{'event', <<"stop-recording">>}]}]}]}
+                  ]).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_record_stop'}, [{<<"*">>, <<"*">>}]}]).
 
@@ -90,9 +95,15 @@ start_link() ->
 
 -spec handle_record_stop(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_record_stop(RecordStop, Props) ->
-    kz_log:put_callid(RecordStop),
+    EventCategory = get_event_category(RecordStop),
     Pid = props:get_value('server', Props),
-    maybe_save_recording(Pid, RecordStop).
+    case EventCategory of
+        'call' ->
+            kz_log:put_callid(RecordStop),
+            maybe_save_recording(Pid, RecordStop);
+        'conference' ->
+            maybe_save_conference_recording(Pid, RecordStop)
+    end.
 
 -spec init([]) -> {'ok', state()}.
 init([]) ->
@@ -199,9 +210,11 @@ code_change(_OldVsn, State, _Extra) ->
 store_recording_meta(#{doc_db := Db
                       ,doc_id := DocId
                       ,account_id := AccountId
+                      ,category := Category
                       }=StoreInfo) ->
     BaseMediaDoc = recording_meta(StoreInfo),
-    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', kzd_call_recordings:type()}]),
+    DocType = get_pvt_recording_type(Category),
+    MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, Db, [{'type', DocType}]),
     case kz_datamgr:save_doc(Db, MediaDoc, [{'ensure_saved', 'true'}]) of
         {'ok', Doc} ->
             lager:debug("recording meta ~s saved for ~s", [DocId, AccountId]),
@@ -310,8 +323,9 @@ record_start_time(JObj, Length) ->
 -spec maybe_store_recording_meta(store_info()) -> kz_term:ne_binary() | {'error', any()}.
 maybe_store_recording_meta(#{doc_db := Db
                             ,doc_id := DocId
+                            ,category := Category
                             }=State) ->
-    case kz_datamgr:lookup_doc_rev(Db, {kzd_call_recordings:type(), DocId}) of
+    case kz_datamgr:lookup_doc_rev(Db, {get_pvt_recording_type(Category), DocId}) of
         {'ok', Rev} -> Rev;
         _ -> store_recording_meta(State)
     end.
@@ -321,13 +335,17 @@ store_url(#{doc_db := Db
            ,doc_id := MediaId
            ,media := {_, MediaName}
            ,should_store := {'true', 'local'}
+           ,category := Category
+
            }, _Rev) ->
-    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, []);
+    media_url:store(Db, {get_pvt_recording_type(Category), MediaId}, MediaName, []);
 store_url(#{doc_db := Db
            ,doc_id := MediaId
            ,media := {_, MediaName}
            ,should_store := {'true', 'other', Url}
            ,verb := Verb
+           ,category := Category
+
            } = Store, _Rev) ->
     HandlerOpts = #{url => Url
                    ,verb => Verb
@@ -340,30 +358,35 @@ store_url(#{doc_db := Db
                ,att_handler => {AttHandler, HandlerOpts}
                },
     Options = [{'plan_override', Handler}],
-    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
+    media_url:store(Db, {get_pvt_recording_type(Category), MediaId}, MediaName, Options).
 
 -spec handler_fields(kz_term:ne_binary(), store_info()) ->
           kz_term:proplist().
-handler_fields(Url, Store) ->
+handler_fields(Url, #{category := Category} = Store) ->
     {Protocol, _, _, _, _} = kz_http_util:urlsplit(Url),
-    handler_fields_for_protocol(Protocol, Url, Store).
+    case Category of
+        'call' ->
+            handler_call_fields_for_protocol(Protocol, Url, Store);
+        'conference' ->
+            handler_conference_fields_for_protocol(Protocol, Url, Store)
+    end.
 
--spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
+-spec handler_call_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
           kz_term:proplist().
-handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+handler_call_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
     [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
     ,{'const', get_extension(Ext)}
     ];
-handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+handler_call_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
     [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
     ,{'const', get_extension(Ext)}
     ];
-handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
-                                                        ,'extension':=Ext
-                                                        ,'doc_id':=DocId
-                                                        }) ->
+handler_call_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
+                                                             ,'extension':=Ext
+                                                             ,'doc_id':=DocId
+                                                             }) ->
     {S1, S2} = check_url(Url),
     [{'const', <<S1/binary, "call_recording_">>}, {'field', <<"call_id">>}, {'const', get_extension(Ext)}
     ,{'const', <<S2/binary, "from=">>}, {'field', <<"from">>}
@@ -372,6 +395,29 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
     ,{'const', <<"&caller_id_number=">>}, {'field', <<"caller_id_number">>}
     ,{'const', <<"&call_id=">>}, {'field', <<"call_id">>}
     ,{'const', <<"&cdr_id=">>}, {'field', <<"cdr_id">>}
+    ,{'const', <<"&interaction_id=">>}, {'field', <<"interaction_id">>}
+    ,{'const', <<"&account_id=">>}, AccountId
+    ,{'const', <<"&duration_ms=">>}, {'field', <<"duration_ms">>}
+    ,{'const', <<"&owner_id=">>}, {'field', <<"owner_id">>}
+    ,{'const', <<"&start=">>}, {'field', <<"start">>}
+    ,{'const', <<"&recording_id=">>}, {'const', DocId}
+    ].
+
+-spec handler_conference_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
+          kz_term:proplist().
+handler_conference_fields_for_protocol(<<"ftp", _/binary>>, _Url, _Store) ->
+    [{'const', <<"conference_recording_">>}
+    ,{'field', <<"name">>}
+    ];
+handler_conference_fields_for_protocol(<<"sftp", _/binary>>, _Url, _Store) ->
+    [{'const', <<"conference_recording_">>}
+    ,{'field', <<"name">>}
+    ];
+handler_conference_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
+                                                                   ,'doc_id':=DocId
+                                                                   }) ->
+    {S1, S2} = check_url(Url),
+    [{'const', <<S1/binary, "conference_recording_">>}, { 'field', <<"name">>}, {'const', <<S2/binary>>}
     ,{'const', <<"&interaction_id=">>}, {'field', <<"interaction_id">>}
     ,{'const', <<"&account_id=">>}, AccountId
     ,{'const', <<"&duration_ms=">>}, {'field', <<"duration_ms">>}
@@ -441,17 +487,27 @@ is_channel_loopback_bowout(RecordStop) ->
 
 -spec maybe_save_recording(pid(), kz_json:object(), kz_term:api_ne_binary()) -> 'ok'.
 maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
-    AccountId = kz_recording:account_id(JObj),
+    EventCategory = get_event_category(JObj),
+
+    %% AccountId = kz_recording:account_id(JObj),
+    AccountId = get_account_id(EventCategory, JObj),
     Media = {_, MediaId} = kz_recording:response_media(JObj),
     Ext = filename:extension(MediaId),
     lager:debug("saving recording media ~s in account ~s", [MediaId, AccountId]),
     Data = kz_recording:data(JObj, kz_json:new()),
-    DocId = kz_recording:id(JObj),
+    %% DocId = kz_recording:id(JObj),
+    DocId = get_doc_id(EventCategory, JObj),
+
     {Year, Month, _} = erlang:date(),
     DefaultDB = kazoo_modb:get_modb(AccountId, Year, Month),
     DocDb = recording_db(Data, DefaultDB),
     CallId = kz_call_event:call_id(JObj),
-    CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
+    %% CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
+    CdrId = case CallId of
+                'undefined' -> 'undefined';
+                CallId ->
+                    ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId)
+            end,
     InteractionId = kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
     ShouldStore = should_store_recording(Data, AccountId, Url),
@@ -477,6 +533,7 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
              ,origin => Origin
              ,pid => Pid
              ,data => Data
+             ,category => EventCategory
              },
     save_recording(maybe_set_default_user_metadata(Store));
 maybe_save_recording(_Pid, _JObj, _Recorder) ->
@@ -510,13 +567,59 @@ storage_retry_times(Data, AccountId) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec maybe_set_default_user_metadata(store_info()) -> store_info().
-maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
+maybe_set_default_user_metadata(#{category := Category, account_id := AccountId}=StoreInfo) ->
+    ConfigType = case Category of
+                     'call' -> <<"call_recording">>;
+                     'conference' -> "conference_recording"
+                 end,
     case kapps_account_config:get_with_strategy(<<"global">>
                                                ,AccountId
                                                ,?CONFIG_CAT
-                                               ,[<<"call_recording">>, <<"default_user_metadata">>]
+                                               ,[ConfigType, <<"default_user_metadata">>]
                                                )
     of
         'undefined' -> StoreInfo;
         DefaultUserMetadata -> StoreInfo#{user_metadata => DefaultUserMetadata}
     end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% conference media recording storing
+%% @end
+%%------------------------------------------------------------------------------
+-spec maybe_save_conference_recording(pid(), kz_term:object()) -> 'ok'.
+maybe_save_conference_recording(Pid, RecordStop) ->
+    ConferenceId = kz_json:get_binary_value(<<"Conference-ID">>, RecordStop),
+    kz_log:put_callid(ConferenceId),
+    Data = kz_recording:data(RecordStop),
+    case Data of
+        'undefined' ->
+            lager:info("not handle conference record because of missing data");
+        _ ->
+            Recorder = kz_json:get_binary_value(<<"Recorder">>, Data),
+            maybe_save_recording(Pid, RecordStop, Recorder)
+    end.
+
+-spec get_event_category(kz_json:object()) -> event_category().
+get_event_category(JObj) ->
+    case kz_json:get_atom_value(<<"Event-Category">>, JObj) of
+        'conference' -> 'conference';
+        'call_event' -> 'call'
+    end.
+
+-spec get_doc_id(event_category(), kz_json:object()) -> kz_term:api_ne_binary().
+get_doc_id('call', JObj) -> kz_recording:id(JObj);
+get_doc_id('conference', _JObj) -> conference_media_doc_id().
+
+-spec get_account_id(event_category(), kz_json:object()) -> kz_json:ne_binary().
+get_account_id('call', JObj) -> kz_recording:account_id(JObj);
+get_account_id('conference', JObj) -> kz_json:get_binary_value(<<"Account-ID">>, JObj).
+
+-spec get_pvt_recording_type(event_category()) -> kz_term:binary().
+get_pvt_recording_type('call') -> kzd_call_recordings:type();
+get_pvt_recording_type('conference') -> <<"conference_recording">>.
+
+-spec conference_media_doc_id() -> kz_term:binary().
+conference_media_doc_id() ->
+    {Year, Month, _} = erlang:date(),
+    ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), kz_binary:rand_hex(16)).
