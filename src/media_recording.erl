@@ -355,24 +355,24 @@ store_url(#{doc_db := Db
           kz_term:proplist().
 handler_fields(Url, Store) ->
     {Protocol, _, _, _, _} = kz_http_util:urlsplit(Url),
-    handler_call_fields_for_protocol(Protocol, Url, Store).
+    handler_fields_for_protocol(Protocol, Url, Store).
 
--spec handler_call_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
+-spec handler_fields_for_protocol(kz_term:ne_binary(), kz_term:ne_binary(), store_info()) ->
           kz_term:proplist().
-handler_call_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+handler_fields_for_protocol(<<"ftp", _/binary>>, _Url, #{'extension':=Ext}) ->
     [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
     ,{'const', get_extension(Ext)}
     ];
-handler_call_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
+handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
     [{'const', <<"call_recording_">>}
     ,{'field', <<"call_id">>}
     ,{'const', get_extension(Ext)}
     ];
-handler_call_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
-                                                             ,'extension':=Ext
-                                                             ,'doc_id':=DocId
-                                                             }) ->
+handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
+                                                        ,'extension':=Ext
+                                                        ,'doc_id':=DocId
+                                                        }) ->
     {S1, S2} = check_url(Url),
     [{'const', <<S1/binary, "call_recording_">>}, {'field', <<"call_id">>}, {'const', get_extension(Ext)}
     ,{'const', <<S2/binary, "from=">>}, {'field', <<"from">>}
