@@ -72,7 +72,8 @@ maybe_proxy(JObj, #media_store_path{db = Db
                                    }=Store) ->
     lager:debug("fetching attachment url for '~p' , '~p', '~p'", [Db, Id, Attachment]),
     StreamType = media_util:convert_stream_type(kz_json:get_value(<<"Stream-Type">>, JObj)),
-    case kz_datamgr:attachment_url(Db, Id, Attachment, [{'stream_type',StreamType} | Options]) of
+    NewOptions = props:delete('transcribe', Options),
+    case kz_datamgr:attachment_url(Db, Id, Attachment, [{'stream_type',StreamType} | NewOptions]) of
         {'error', 'not_found'} ->
             lager:debug("no attachment URL found"),
             <<>>;
