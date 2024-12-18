@@ -44,14 +44,14 @@
                        ,extension := kz_term:ne_binary()
                        ,doc_id := kz_term:ne_binary()
                        ,doc_db := kz_term:ne_binary()
-                       ,cdr_id := kz_term:ne_binary()
+                       ,cdr_id := kz_term:api_ne_binary()
                        ,interaction_id := kz_term:ne_binary()
                        ,should_store := store_url()
                        ,retries := non_neg_integer()
                        ,verb := kz_term:ne_binary()
                        ,account_id := kz_term:ne_binary()
                        ,endpoint_id := kz_term:ne_binary()
-                       ,call_id := kz_term:ne_binary()
+                       ,call_id := kz_term:api_ne_binary()
                        ,event := kz_call_event:payload()
                        ,origin := kz_term:ne_binary()
                        ,pid := pid()
@@ -60,7 +60,9 @@
                        }.
 
 %% By convention, we put the options here in macros, but not required.
--define(BINDINGS, [{'call', [{'restrict_to', ['RECORD_STOP']}]}]).
+-define(BINDINGS, [{'call', [{'restrict_to', ['RECORD_STOP']}]}
+                  ,{'conference', [{'restrict_to', [{'event', [{'event', <<"stop-recording">>}]}]}]}
+                  ]).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_record_stop'}, [{<<"*">>, <<"*">>}]}]).
 
@@ -90,9 +92,14 @@ start_link() ->
 
 -spec handle_record_stop(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_record_stop(RecordStop, Props) ->
-    kz_log:put_callid(RecordStop),
     Pid = props:get_value('server', Props),
-    maybe_save_recording(Pid, RecordStop).
+    case kz_conference_event:event(RecordStop) of
+        <<"stop-recording">> ->
+            maybe_save_conference_recording(Pid, RecordStop);
+        _ ->
+            kz_log:put_callid(RecordStop),
+            maybe_save_recording(Pid, RecordStop)
+    end.
 
 -spec init([]) -> {'ok', state()}.
 init([]) ->
@@ -230,6 +237,10 @@ recording_meta(#{media := {_, MediaName}
     LengthMs = recording_length(JObj),
     LengthSeconds = LengthMs div ?MILLISECONDS_IN_SECOND,
     Start = record_start_time(JObj, LengthSeconds),
+
+    ConferenceId = kz_conference_event:conference_id(JObj),
+    IsConference = kz_term:is_not_empty(ConferenceId),
+
     BaseMediaDoc = kz_json:from_list(
                      [{<<"_id">>, DocId}
                      ,{<<"call_id">>, CallId}
@@ -240,7 +251,7 @@ recording_meta(#{media := {_, MediaName}
                      ,{<<"cdr_id">>, CdrId}
                      ,{<<"content_type">>, kz_mime:from_extension(Ext)}
                      ,{<<"custom_channel_vars">>, kz_call_event:custom_channel_vars(JObj)}
-                     ,{<<"description">>, <<"recording ", MediaName/binary>>}
+                     ,{<<"description">>, recording_description(MediaName, IsConference)}
                      ,{<<"direction">>, kz_call_event:call_direction(JObj)}
                      ,{<<"duration">>, LengthSeconds}
                      ,{<<"duration_ms">>, LengthMs}
@@ -259,9 +270,17 @@ recording_meta(#{media := {_, MediaName}
                      ,{<<"to">>, kz_json:get_ne_binary_value(<<"To">>, JObj)}
                      ,{<<"url">>, Url}
                      ,{<<"recording_vars">>, recording_vars(Data)}
+                     ,{<<"conference_recording">>, IsConference}
+                     ,{<<"conference_id">>, ConferenceId}
                      ]
                     ),
     maybe_set_user_metadata(StoreInfo, BaseMediaDoc).
+
+-spec recording_description(kz_term:ne_binary(), boolean()) -> kz_term:ne_binary().
+recording_description(MediaName, 'false') ->
+    <<"recording ", MediaName/binary>>;
+recording_description(MediaName, 'true') ->
+    <<"conference recording ", MediaName/binary>>.
 
 -spec meta_account_id(kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_ne_binary().
 meta_account_id(AccountId, AccountId) -> 'undefined';
@@ -378,6 +397,8 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
     ,{'const', <<"&owner_id=">>}, {'field', <<"owner_id">>}
     ,{'const', <<"&start=">>}, {'field', <<"start">>}
     ,{'const', <<"&recording_id=">>}, {'const', DocId}
+    ,{'const', <<"&conference_recording=">>}, {'field', <<"conference_recording">>}
+    ,{'const', <<"&conference_id">>}, {'field', <<"conference_id">>}
     ].
 
 -spec get_extension(kz_term:ne_binary()) -> kz_term:ne_binary().
@@ -441,18 +462,19 @@ is_channel_loopback_bowout(RecordStop) ->
 
 -spec maybe_save_recording(pid(), kz_json:object(), kz_term:api_ne_binary()) -> 'ok'.
 maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
-    AccountId = kz_recording:account_id(JObj),
+    AccountId = kz_recording:account_id(JObj, kz_json:get_binary_value(<<"Account-ID">>, JObj)),
     Media = {_, MediaId} = kz_recording:response_media(JObj),
     Ext = filename:extension(MediaId),
     lager:debug("saving recording media ~s in account ~s", [MediaId, AccountId]),
     Data = kz_recording:data(JObj, kz_json:new()),
     DocId = kz_recording:id(JObj),
+
     {Year, Month, _} = erlang:date(),
     DefaultDB = kazoo_modb:get_modb(AccountId, Year, Month),
     DocDb = recording_db(Data, DefaultDB),
     CallId = kz_call_event:call_id(JObj),
-    CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
-    InteractionId = kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>),
+    CdrId = cdr_id(CallId, Year, Month),
+    InteractionId = interaction_id(JObj),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
     ShouldStore = should_store_recording(Data, AccountId, Url),
     Verb = kz_json:get_ne_binary_value(<<"method">>, Data, <<"put">>),
@@ -481,6 +503,15 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     save_recording(maybe_set_default_user_metadata(Store));
 maybe_save_recording(_Pid, _JObj, _Recorder) ->
     lager:info("recorder ~s not handled", [_Recorder]).
+
+-spec interaction_id(kz_json:object()) -> kz_term:ne_binary().
+interaction_id(JObj) ->
+    case kz_conference_event:conference_vars(JObj) of
+        'undefined' ->
+            kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>);
+        ConfVars ->
+            kz_json:get_ne_binary_value(<<"Interaction-ID">>, ConfVars)
+    end.
 
 -spec recording_db(kz_json:object(), kz_term:ne_binary()) -> kz_term:ne_binary().
 recording_db(Data, DefaultDB) ->
@@ -520,3 +551,39 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
         'undefined' -> StoreInfo;
         DefaultUserMetadata -> StoreInfo#{user_metadata => DefaultUserMetadata}
     end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% conference media recording storing
+%% @end
+%%------------------------------------------------------------------------------
+-spec maybe_save_conference_recording(pid(), kz_term:object()) -> 'ok'.
+maybe_save_conference_recording(Pid, JObj) ->
+    ConferenceId = kz_json:get_binary_value(<<"Conference-ID">>, JObj),
+    kz_log:put_callid(ConferenceId),
+    case kz_recording:data(JObj) of
+        'undefined' ->
+            lager:info("not handle conference record because of missing data");
+        Data ->
+            Recorder = kz_json:get_binary_value(<<"Recorder">>, Data),
+
+            Recording0 = kz_json:get_value(<<"Recording">>, JObj),
+            %% freeswicth may add recording info to path (probably conference had video enabled):
+            %% {video_time_audio=false,channels=2,samplerate=16000,vw=1280,vh=720,fps=15.00}/tmp/filename.ext
+            FilePath = re:replace(kz_json:get_ne_binary_value(<<"File-Path">>, Recording0)
+                                 ,<<"\\{[^}]+\\}">>
+                                 ,<<>>
+                                 ,[{'return', 'binary'}]
+                                 ),
+
+            Prop = [{<<"Account-ID">>, kz_conference_event:account_id(JObj)}
+                   ,{<<"File-Path">>, FilePath}
+                   ],
+            Recording = kz_json:merge(Recording0, kz_json:set_values(Prop, Data)),
+            maybe_save_recording(Pid, kz_json:set_value(<<"Recording">>, Recording, JObj), Recorder)
+    end.
+
+cdr_id('undefined', _Year, _Month) ->
+    'undefined';
+cdr_id(CallId, Year, Month) ->
+    ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId).
