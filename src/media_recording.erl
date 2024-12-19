@@ -57,6 +57,7 @@
                        ,pid := pid()
                        ,data := kz_json:object()
                        ,user_metadata => kz_json:object()
+                       ,transcribe := boolean()
                        }.
 
 %% By convention, we put the options here in macros, but not required.
@@ -127,10 +128,7 @@ handle_cast({'store_failed', #{retries := 0}, Error}, State) ->
     lager:debug("store failed : ~p, no more retries.", [Error]),
     {'noreply', State};
 
-handle_cast({'store_failed', Store, 'file_not_found'}, State) ->
-    #{doc_db := Db
-     ,doc_id := DocId
-     } = Store,
+handle_cast({'store_failed', #{doc_db := Db ,doc_id := DocId}=_Store, 'file_not_found'}, State) ->
     _ = kz_datamgr:del_doc(Db, DocId),
     {'noreply', State};
 handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
@@ -232,6 +230,7 @@ recording_meta(#{media := {_, MediaName}
                 ,endpoint_id := EndpointId
                 ,origin := Origin
                 ,data := Data
+                ,transcribe := Transcribe
                 }=StoreInfo) ->
     Ext = filename:extension(MediaName),
     LengthMs = recording_length(JObj),
@@ -272,6 +271,7 @@ recording_meta(#{media := {_, MediaName}
                      ,{<<"recording_vars">>, recording_vars(Data)}
                      ,{<<"conference_recording">>, IsConference}
                      ,{<<"conference_id">>, ConferenceId}
+                     ,{<<"transcribe">>, Transcribe}
                      ]
                     ),
     maybe_set_user_metadata(StoreInfo, BaseMediaDoc).
@@ -340,13 +340,15 @@ store_url(#{doc_db := Db
            ,doc_id := MediaId
            ,media := {_, MediaName}
            ,should_store := {'true', 'local'}
-           }, _Rev) ->
-    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, []);
+           ,transcribe := Transcribe
+           } = Store, _Rev) ->
+    media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, get_transcribe_option(Transcribe, Store));
 store_url(#{doc_db := Db
            ,doc_id := MediaId
            ,media := {_, MediaName}
            ,should_store := {'true', 'other', Url}
            ,verb := Verb
+           ,transcribe := Transcribe
            } = Store, _Rev) ->
     HandlerOpts = #{url => Url
                    ,verb => Verb
@@ -358,7 +360,7 @@ store_url(#{doc_db := Db
                ,att_post_handler => 'external'
                ,att_handler => {AttHandler, HandlerOpts}
                },
-    Options = [{'plan_override', Handler}],
+    Options = [{'plan_override', Handler}] ++ get_transcribe_option(Transcribe, Store),
     media_url:store(Db, {kzd_call_recordings:type(), MediaId}, MediaName, Options).
 
 -spec handler_fields(kz_term:ne_binary(), store_info()) ->
@@ -476,6 +478,7 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     CdrId = cdr_id(CallId, Year, Month),
     InteractionId = interaction_id(JObj),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
+    Transcribe = kz_json:is_true(<<"transcribe">>, Data),
     ShouldStore = should_store_recording(Data, AccountId, Url),
     Verb = kz_json:get_ne_binary_value(<<"method">>, Data, <<"put">>),
     Origin = kz_json:get_ne_binary_value(<<"origin">>, Data, <<"no origin">>),
@@ -499,6 +502,7 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
              ,origin => Origin
              ,pid => Pid
              ,data => Data
+             ,transcribe => Transcribe
              },
     save_recording(maybe_set_default_user_metadata(Store));
 maybe_save_recording(_Pid, _JObj, _Recorder) ->
@@ -587,3 +591,24 @@ cdr_id('undefined', _Year, _Month) ->
     'undefined';
 cdr_id(CallId, Year, Month) ->
     ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId).
+
+-spec get_transcribe_option(boolean(), store_info()) -> kz_term:proplist().
+get_transcribe_option('false', _Store) ->
+    [];
+get_transcribe_option('true', #{media := {_, MediaId}
+                               ,doc_db := Db
+                               ,doc_id := DocId
+                               ,account_id := AccountId
+                               ,call_id := CallId
+                               ,extension := Ext
+                               ,event := JObj
+                               }) ->
+    TranscribeInfo = [{'account_id', AccountId}
+                     ,{'call_id', CallId}
+                     ,{'content_type', kz_mime:from_extension(Ext)}
+                     ,{'recording_milliseconds', recording_length(JObj)}
+                     ,{'media_id', DocId}
+                     ,{'attachment_id', MediaId}
+                     ,{'modb', Db}
+                     ],
+    [{'transcribe', TranscribeInfo}].

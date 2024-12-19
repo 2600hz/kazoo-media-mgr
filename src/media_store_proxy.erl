@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2024, 2600Hz
 %%% @doc Handles storage proxy requests for media binaries
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -274,6 +274,7 @@ ensure_extension_present(#media_store_path{att=Attachment}=Path, CT) ->
 store(#state{filename=Filename, media=Path}=State, Req) ->
     case file:read_file(Filename) of
         {'ok', Data} ->
+            maybe_request_transcribe(Data, State),
             store(Path, Data, State, Req);
         {'error', Reason} ->
             lager:info("error ~p opening file ~s", [Reason, Filename]),
@@ -288,7 +289,8 @@ store(#media_store_path{db=Db
                        ,opt=Options
                        }, Contents, State, Req) ->
     lager:debug("putting ~s onto ~s(~s)", [Attachment, Id, Db]),
-    case kz_datamgr:put_attachment(Db, Id, Attachment, Contents, Options) of
+    NewOptions = props:delete('transcribe', Options),
+    case kz_datamgr:put_attachment(Db, Id, Attachment, Contents, NewOptions) of
         {'ok', JObj} ->
             lager:debug("successfully stored(~p) ~p ~p", [Db, Id, Attachment]),
             {'ok', success(JObj, [], Req), State};
@@ -329,3 +331,14 @@ terminate(_Reason, _Req, #state{file=Device, filename=Filename}) ->
     lager:debug("closed files and terminated handler: ~p", [_Reason]);
 terminate(_Reason, _Req, _) ->
     lager:debug("terminating handler: ~p", [_Reason]).
+
+-spec maybe_request_transcribe(binary(), state()) -> 'ok'.
+maybe_request_transcribe(IOData, #state{media = Path}) ->
+    PathOption = Path#media_store_path.opt,
+    case props:get_value('transcribe', PathOption) of
+        'undefined' ->
+            'ok';
+        Transcribe ->
+            Pid = kz_process:spawn('media_transcribe', 'request', [IOData, Transcribe]),
+            lager:info("start ~p process to handle transcribe request", [Pid])
+    end.
