@@ -561,7 +561,7 @@ maybe_set_default_user_metadata(#{account_id := AccountId}=StoreInfo) ->
 %% conference media recording storing
 %% @end
 %%------------------------------------------------------------------------------
--spec maybe_save_conference_recording(pid(), kz_term:object()) -> 'ok'.
+-spec maybe_save_conference_recording(pid(), kz_json:object()) -> 'ok'.
 maybe_save_conference_recording(Pid, JObj) ->
     ConferenceId = kz_json:get_binary_value(<<"Conference-ID">>, JObj),
     kz_log:put_callid(ConferenceId),
