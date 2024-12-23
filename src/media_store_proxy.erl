@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Handles storage proxy requests for media binaries
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -32,7 +32,7 @@
 
 -spec init(cowboy_req:req(), kz_term:proplist()) -> handler_return().
 init(Req, _Opts) ->
-    process_flag(trap_exit, true),
+    process_flag('trap_exit', 'true'),
     kz_log:put_callid(kz_binary:rand_hex(16)),
     check_authn(Req, authenticate(Req)).
 
@@ -339,6 +339,6 @@ maybe_request_transcribe(IOData, #state{media = Path}) ->
         'undefined' ->
             'ok';
         Transcribe ->
-            Pid = kz_process:spawn('media_transcribe', 'request', [IOData, Transcribe]),
+            Pid = kz_process:spawn('media_transcribe', 'make_request', [IOData, Transcribe]),
             lager:info("start ~p process to handle transcribe request", [Pid])
     end.
