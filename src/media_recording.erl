@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -46,6 +46,7 @@
                        ,doc_db := kz_term:ne_binary()
                        ,cdr_id := kz_term:api_ne_binary()
                        ,interaction_id := kz_term:ne_binary()
+                       ,conference_name := kz_term:api_ne_binary()
                        ,should_store := store_url()
                        ,retries := non_neg_integer()
                        ,verb := kz_term:ne_binary()
@@ -223,6 +224,7 @@ recording_meta(#{media := {_, MediaName}
                 ,doc_id := DocId
                 ,cdr_id := CdrId
                 ,interaction_id := InteractionId
+                ,conference_name := ConferenceName
                 ,url := Url
                 ,call_id := CallId
                 ,event := JObj
@@ -271,6 +273,7 @@ recording_meta(#{media := {_, MediaName}
                      ,{<<"recording_vars">>, recording_vars(Data)}
                      ,{<<"conference_recording">>, IsConference}
                      ,{<<"conference_id">>, ConferenceId}
+                     ,{<<"conference_name">>, ConferenceName}
                      ,{<<"transcribe">>, Transcribe}
                      ]
                     ),
@@ -477,6 +480,7 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
     CallId = kz_call_event:call_id(JObj),
     CdrId = cdr_id(CallId, Year, Month),
     InteractionId = interaction_id(JObj),
+    ConferenceName = kz_json:get_ne_binary_value(<<"Conference-Name">>, Data),
     Url = kz_json:get_ne_binary_value(<<"url">>, Data),
     Transcribe = kz_json:is_true(<<"transcribe">>, Data),
     ShouldStore = should_store_recording(Data, AccountId, Url),
@@ -492,6 +496,7 @@ maybe_save_recording(Pid, JObj, ?KZ_RECORDER) ->
              ,doc_db => DocDb
              ,cdr_id => CdrId
              ,interaction_id => InteractionId
+             ,conference_name => ConferenceName
              ,should_store => ShouldStore
              ,retries => Retries
              ,verb => Verb
