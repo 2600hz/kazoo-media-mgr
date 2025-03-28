@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2024, 2600Hz
+%%% @copyright (C) 2010-2025, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -33,12 +33,12 @@
 -spec prompt_url(kz_term:ne_binary()) -> 'ok'.
 prompt_url(PromptId) ->
     AccountId = ?KZ_MEDIA_DB,
-    Language = media_util:default_prompt_language(),
+    Language = kz_media_util:default_prompt_language(),
     prompt_url(PromptId, AccountId, Language).
 
 -spec prompt_url(kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
 prompt_url(PromptId, AccountId) ->
-    Language = media_util:prompt_language(AccountId),
+    Language = kz_media_util:prompt_language(AccountId),
     prompt_url(PromptId, AccountId, Language).
 
 -spec prompt_url(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
@@ -68,7 +68,7 @@ migrate_prompts() ->
 -spec set_account_language(kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
 set_account_language(Account, Language) ->
     AccountId = kzs_util:format_account_id(Account),
-    OldLang = media_util:prompt_language(AccountId),
+    OldLang = kz_media_util:prompt_language(AccountId),
 
     try kapps_account_config:set(AccountId
                                 ,?CONFIG_CAT
@@ -86,7 +86,7 @@ set_account_language(Account, Language) ->
 
 -spec import_prompts(file:filename_all()) -> 'ok'.
 import_prompts(DirPath) ->
-    import_prompts(DirPath, media_util:default_prompt_language()).
+    import_prompts(DirPath, kz_media_util:default_prompt_language()).
 
 -spec import_prompts(file:filename_all(), kz_term:text()) -> 'ok'.
 import_prompts(DirPath, Lang) ->
@@ -124,7 +124,7 @@ import_prompts_from_files(Files, Lang) ->
 
 -spec import_prompt(file:filename_all()) -> 'ok' | {'error', any()}.
 import_prompt(Path) ->
-    import_prompt(Path, media_util:default_prompt_language()).
+    import_prompt(Path, kz_media_util:default_prompt_language()).
 
 -spec import_prompt(file:filename_all(), kz_term:text()) -> 'ok' | {'error', any()}.
 import_prompt(Path, Lang) ->
@@ -184,7 +184,7 @@ media_meta_doc(Path, Lang, ContentLength) ->
 base_media_doc(Path, Lang, ContentLength) ->
     PromptName = prompt_name_from_path(Path),
     ContentType = content_type_from_path(Path),
-    ID = media_util:prompt_id(PromptName, Lang),
+    ID = kz_media_util:prompt_id(PromptName, Lang),
 
     io:format("  importing as '~s'~n", [ID]),
 

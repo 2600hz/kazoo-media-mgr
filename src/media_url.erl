@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc
 %%% @author Karl Anderson
 %%%
@@ -53,7 +53,7 @@ playback(<<"prompt://", PromptPath/binary>>, Options) ->
             playback(Media, Options);
         [AccountId, PromptId] ->
             lager:info("got req for prompt ~s without language, checking account ~s", [PromptId, AccountId]),
-            Language = media_util:prompt_language(AccountId),
+            Language = kz_media_util:prompt_language(AccountId),
             Media = media_map:prompt_path(AccountId, PromptId, Language),
             playback(Media, Options);
         [<<(PromptId):32/binary>>] ->
@@ -61,7 +61,7 @@ playback(<<"prompt://", PromptPath/binary>>, Options) ->
             playback(list_to_binary([?KZ_MEDIA_DB, "/", PromptId]), Options);
         [PromptId] ->
             lager:info("got req for prompt ~s without account and language, checking with ~s", [PromptId, ?KZ_MEDIA_DB]),
-            Language = media_util:prompt_language(?KZ_MEDIA_DB),
+            Language = kz_media_util:prompt_language(?KZ_MEDIA_DB),
             Media = media_map:prompt_path(?KZ_MEDIA_DB, PromptId, Language),
             playback(Media, Options)
     end;
@@ -73,7 +73,7 @@ playback(Path, JObj)
     media_file:get_uri(Path, JObj);
 playback(Doc, JObj) ->
     lager:debug("building media url from doc"),
-    case media_util:store_path_from_doc(Doc) of
+    case kz_media_util:store_path_from_doc(Doc) of
         #media_store_path{}=Media -> media_file:get_uri(Media, JObj);
         Error -> Error
     end.
@@ -81,7 +81,7 @@ playback(Doc, JObj) ->
 -spec store(kz_json:object(), kz_term:ne_binary()) ->
           build_media_url_ret().
 store(JObj, AName) ->
-    Media = media_util:store_path_from_doc(JObj, AName),
+    Media = kz_media_util:store_path_from_doc(JObj, AName),
     media_file:get_uri(Media, ?STREAM_TYPE_STORE).
 
 -spec store(kz_term:ne_binary(), kazoo_data:docid(), kz_term:ne_binary()) ->

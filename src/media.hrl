@@ -21,7 +21,7 @@
                     ,{<<"proxy_username">>, 'undefined'}
                     ,{<<"proxy_password">>, 'undefined'}
                     ,{<<"proxy_store_acls">>, [<<"127.0.0.0/24">>]}
-                    ,{<<"max_recording_time_limit">>, media_util:max_recording_time_limit()}
+                    ,{<<"max_recording_time_limit">>, kz_media_util:max_recording_time_limit()}
                     ,{[<<"call_recording">>, <<"extension">>], <<"mp3">>}
                     ,{<<"store_recordings">>, 'false'}
                     ,{<<"third_party_bigcouch_host">>, 'undefined'}

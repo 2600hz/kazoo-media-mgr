@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2014-2023, 2600Hz
+%%% @copyright (C) 2014-2025, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -357,16 +357,16 @@ maybe_add_prompt(_AccountId, _JObj, 'undefined') ->
 maybe_add_prompt(AccountId, JObj, PromptId) ->
     lager:debug("add prompt ~s to ~s (~s)", [PromptId, AccountId, kz_doc:id(JObj)]),
     Lang = kz_term:to_lower_binary(
-             kz_json:get_value(<<"language">>, JObj, media_util:prompt_language(AccountId))
+             kz_json:get_value(<<"language">>, JObj, kz_media_util:prompt_language(AccountId))
             ),
 
     #media_map{languages=Langs}=Map = get_map(AccountId, PromptId),
 
     lager:debug("adding language ~s for prompt ~s to map for ~s", [Lang, PromptId, AccountId]),
     Languages = kz_json:set_value(Lang
-                                 ,media_util:prompt_path(kz_doc:account_id(JObj, ?KZ_MEDIA_DB)
-                                                        ,kz_http_util:urlencode(kz_doc:id(JObj))
-                                                        )
+                                 ,kz_media_util:prompt_path(kz_doc:account_id(JObj, ?KZ_MEDIA_DB)
+                                                           ,kz_http_util:urlencode(kz_doc:id(JObj))
+                                                           )
                                  ,Langs
                                  ),
     UpdatedMap = Map#media_map{account_id=AccountId
@@ -457,7 +457,7 @@ load_account_map(AccountId, PromptId) ->
 
 -spec default_language_keys(kz_term:ne_binary()) -> kz_term:ne_binaries().
 default_language_keys(Language) ->
-    DefaultLanguage = media_util:default_prompt_language(),
+    DefaultLanguage = kz_media_util:default_prompt_language(),
     language_keys(Language) ++ [DefaultLanguage].
 
 -spec language_keys(kz_term:ne_binary()) -> kz_term:ne_binaries().

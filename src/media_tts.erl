@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2023, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -22,11 +22,11 @@ get_uri(Id, JObj) ->
     lager:debug("tts server for ~s at ~p", [Id, _TTSServer]),
 
     Format = kz_json:get_ne_binary_value(<<"Format">>, JObj, <<"wav">>),
-    Host = media_util:proxy_host(),
+    Host = kz_media_util:proxy_host(),
     Port = kapps_config:get_integer(?CONFIG_CAT, <<"proxy_port">>, 24517),
-    StreamType = media_util:convert_stream_type(kz_json:get_ne_binary_value(<<"Stream-Type">>, JObj)),
+    StreamType = kz_media_util:convert_stream_type(kz_json:get_ne_binary_value(<<"Stream-Type">>, JObj)),
 
-    UrlParts = [media_util:base_url(Host, Port)
+    UrlParts = [kz_media_util:base_url(Host, Port)
                ,StreamType
                ,<<"tts">>
                ,<<Id/binary, ".", Format/binary>>

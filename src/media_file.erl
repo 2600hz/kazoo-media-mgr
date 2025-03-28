@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
 %%%
@@ -71,7 +71,7 @@ maybe_proxy(JObj, #media_store_path{db = Db
                                    ,opt = Options
                                    }=Store) ->
     lager:debug("fetching attachment url for '~p' , '~p', '~p'", [Db, Id, Attachment]),
-    StreamType = media_util:convert_stream_type(kz_json:get_value(<<"Stream-Type">>, JObj)),
+    StreamType = kz_media_util:convert_stream_type(kz_json:get_value(<<"Stream-Type">>, JObj)),
     NewOptions = props:delete('transcribe', Options),
     case kz_datamgr:attachment_url(Db, Id, Attachment, [{'stream_type',StreamType} | NewOptions]) of
         {'error', 'not_found'} ->
@@ -97,7 +97,7 @@ proxy_uri(#media_store_path{db = Db
     _ = maybe_prepare_proxy(StreamType, Store),
     Path = kz_http_util:urlencode(base64:encode(term_to_binary({Db, Id, Attachment, Options}))),
     File = kz_http_util:urlencode(Attachment),
-    UrlParts = [media_util:proxy_base_url(StreamType)
+    UrlParts = [kz_media_util:proxy_base_url(StreamType)
                ,StreamType
                ,Path
                ,File

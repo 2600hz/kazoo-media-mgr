@@ -528,7 +528,6 @@ recording_db(Data, DefaultDB) ->
 
 -spec should_store_recording(kz_json:object(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
           kapps_call_recording:store_url().
-should_store_recording(_Data, 'undefined', _Url) -> 'false';
 should_store_recording(Data, AccountId, Url) ->
     case kz_json:get_boolean_value(<<"should_store_recording">>, Data) of
         'undefined' -> kapps_call_recording:should_store_recording(AccountId, Url);
