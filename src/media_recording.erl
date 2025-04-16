@@ -387,6 +387,7 @@ handler_fields_for_protocol(<<"sftp", _/binary>>, _Url, #{'extension':=Ext}) ->
 handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
                                                         ,'extension':=Ext
                                                         ,'doc_id':=DocId
+                                                        ,'event':=Event
                                                         }) ->
     {S1, S2} = check_url(Url),
     [{'const', <<S1/binary, "call_recording_">>}, {'field', <<"call_id">>}, {'const', get_extension(Ext)}
@@ -402,8 +403,7 @@ handler_fields_for_protocol(<<"http", _/binary>>, Url, #{'account_id':=AccountId
     ,{'const', <<"&owner_id=">>}, {'field', <<"owner_id">>}
     ,{'const', <<"&start=">>}, {'field', <<"start">>}
     ,{'const', <<"&recording_id=">>}, {'const', DocId}
-    ,{'const', <<"&conference_recording=">>}, {'field', <<"conference_recording">>}
-    ,{'const', <<"&conference_id">>}, {'field', <<"conference_id">>}
+    | maybe_add_conference_queries(Event)
     ].
 
 -spec get_extension(kz_term:ne_binary()) -> kz_term:ne_binary().
@@ -589,6 +589,17 @@ maybe_save_conference_recording(Pid, JObj) ->
                    ],
             Recording = kz_json:merge(Recording0, kz_json:set_values(Prop, Data)),
             maybe_save_recording(Pid, kz_json:set_value(<<"Recording">>, Recording, JObj), Recorder)
+    end.
+
+-spec maybe_add_conference_queries(kz_json:object()) -> kz_term:proplist().
+maybe_add_conference_queries(Event) ->
+    ConferenceId = kz_conference_event:conference_id(Event),
+    case kz_term:is_not_empty(ConferenceId) of
+        'false' -> [];
+        'true' ->
+            [{'const', <<"&conference_recording=">>}, {'field', <<"conference_recording">>}
+            ,{'const', <<"&conference_id=">>}, {'field', <<"conference_id">>}
+            ]
     end.
 
 cdr_id('undefined', _Year, _Month) ->
