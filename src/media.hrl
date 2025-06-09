@@ -39,6 +39,12 @@
                     ,{<<"ssl_port">>, 'undefined'}
                     ,{<<"ssl_password">>, 'undefined'}
                     ,{<<"record_min_sec">>, 0}
+                    ,{<<"proxy_store_retry_enabled">>, 'false'}
+                    ,{<<"proxy_store_retry_max_parallel">>, 10}
+                    ,{<<"proxy_store_retry_scan_period_s">>, 600}
+                    ,{<<"proxy_store_retry_attempts">>, 1}
+                    ,{<<"proxy_store_retry_method">>, <<"local file">>}
+                    ,{<<"proxy_store_retry_tmp_dir">>, <<"/tmp">>}
                     ]).
 
 -define(CHUNKSIZE, 24576).
@@ -60,6 +66,13 @@
                           }).
 
 -type media_store_path() :: #media_store_path{}.
+
+-define(RETRY_ENABLED, kapps_config:get_boolean(?CONFIG_CAT, <<"proxy_store_retry_enabled">>, 'false')).
+-define(RETRY_MAX_PARALLEL, kapps_config:get_integer(?CONFIG_CAT, <<"proxy_store_retry_max_parallel">>, 10)).
+-define(RETRY_SCAN_PERIOD, kapps_config:get_integer(?CONFIG_CAT, <<"proxy_store_retry_scan_period_s">>, ?SECONDS_IN_MINUTE * 10) * ?MILLISECONDS_IN_SECOND).
+-define(RETRY_ATTEMPTS, kapps_config:get_integer(?CONFIG_CAT, <<"proxy_store_retry_attempts">>, 1)).
+-define(RETRY_METHOD, kapps_config:get_binary(?CONFIG_CAT, <<"proxy_store_retry_method">>, <<"local file">>)).
+-define(RETRY_TMPDIR, kapps_config:get_binary(?CONFIG_CAT, <<"proxy_store_retry_tmp_dir">>, <<"/tmp">>)).
 
 -define(MEDIA_HRL, 'true').
 -endif.

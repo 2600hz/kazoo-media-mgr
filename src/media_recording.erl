@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
@@ -124,8 +124,13 @@ handle_cast({'store_succeeded', #{}}, State) ->
     lager:debug("store succeeded"),
     {'noreply', State};
 
-handle_cast({'store_failed', #{retries := 0}, Error}, State) ->
-    lager:debug("store failed : ~p, no more retries.", [Error]),
+handle_cast({'store_failed', #{retries := 0} = Store, Error}, State) ->
+    case ?RETRY_ENABLED of
+        'true' ->
+            lager:debug("store failed : ~p, saving locally as last resort.", [Error]),
+            self() ! {'last_resort', Store};
+        'false' -> lager:debug("store failed : ~p, no more retries.", [Error])
+    end,
     {'noreply', State};
 
 handle_cast({'store_failed', #{doc_db := Db ,doc_id := DocId}=_Store, 'file_not_found'}, State) ->
@@ -137,6 +142,12 @@ handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
                ,[Error, Retries, Sleep / ?MILLISECONDS_IN_MINUTE]
                ),
     _TRef = erlang:send_after(Sleep, self(), {'retry_storage', Store}),
+    {'noreply', State};
+handle_cast({'last_resort_failed', _Store, Error}, State) ->
+    lager:debug("last resort failed : ~p, no more retries.", [Error]),
+    {'noreply', State};
+handle_cast({'last_resort_succeeded', #{}}, State) ->
+    lager:debug("last resort succeeded"),
     {'noreply', State};
 handle_cast({'gen_listener',{'created_queue', Queue}}, State) ->
     {'noreply', State#{queue => Queue}};
@@ -158,6 +169,10 @@ handle_cast(_Msg, State) ->
 -spec handle_info(any(), state()) -> kz_types:handle_info_ret_state(state()).
 handle_info({'retry_storage', #{retries := Retries} = Store}, State) ->
     _ = kz_process:spawn(fun() -> save_recording(Store#{retries => Retries - 1}) end),
+    {'noreply', State};
+
+handle_info({'last_resort', Store}, State) ->
+    _ = kz_process:spawn(fun() -> recording_last_resort(Store) end),
     {'noreply', State};
 
 handle_info(_Info, State) ->
@@ -437,6 +452,28 @@ save_recording(#{media := Media, pid := Pid}=Store) ->
         Rev ->
             StoreUrl = fun()-> store_url(Store, Rev) end,
             store_recording(Media, StoreUrl, Store)
+    end.
+
+-spec recording_last_resort(store_info()) -> 'ok'.
+recording_last_resort(#{media := {_, MediaName}, should_store := 'false'}) ->
+    lager:info("not configured to store recording ~s", [MediaName]);
+recording_last_resort(#{event := JObj, media := Media, pid := Pid}=Store) ->
+    case maybe_store_recording_meta(Store) of
+        {'error', Err} ->
+            lager:warning("error storing metadata : ~p", [Err]),
+            gen_server:cast(Pid, {'store_failed', Store});
+        Rev ->
+            StoreUrl = fun()->
+                               Url = store_url(Store, Rev),
+                               <<Url/binary,"?last_resort=true">>
+                       end,
+            Node = kz_call_event:switch_nodename(JObj),
+            {DirName, MediaName} = Media,
+            Filename = filename:join(DirName, MediaName),
+            case kz_storage:store_file(Node, Filename, StoreUrl, Store) of
+                {'error', Error} -> gen_server:cast(Pid, {'last_resort_failed', Store, Error});
+                'ok' -> gen_server:cast(Pid, {'last_resort_succeeded', Store})
+            end
     end.
 
 -spec store_recording(kz_recording:media(), kz_term:ne_binary() | function(), store_info()) -> 'ok'.
