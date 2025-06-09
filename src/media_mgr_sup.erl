@@ -33,6 +33,7 @@
                   ,?WORKER('media_map')
                   ,?WORKER('media_proxy')
                   ,?WORKER('media_listener')
+                  ,?WORKER('media_proxy_retry_worker')
                   ]).
 
 %%==============================================================================
