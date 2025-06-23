@@ -174,7 +174,11 @@ handle_body({'ok', Contents, Req}, #state{file=Device}=State) ->
     end.
 
 handle_close(Req, State, 'ok') ->
-    store(State, Req);
+    QueryString = cowboy_req:parse_qs(Req),
+    case props:get_value(<<"last_resort">>, QueryString) of
+        <<"true">> -> last_resort(State, Req);
+        _ -> store(State, Req)
+    end;
 handle_close(Req, State, {'error', Reason}) ->
     {'ok', failure(Reason, Req), State}.
 
@@ -342,3 +346,96 @@ maybe_request_transcribe(IOData, #state{media = Path}) ->
             Pid = kz_process:spawn('media_transcribe', 'request', [IOData, Transcribe]),
             lager:info("start ~p process to handle transcribe request", [Pid])
     end.
+
+-spec last_resort(state(), cowboy_req:req()) -> {'ok', cowboy_req:req(), state()}.
+last_resort(State, Req) ->
+    Method = ?RETRY_METHOD,
+    last_resort(State, Req, Method).
+
+-spec last_resort(state(), cowboy_req:req(), kz_term:ne_binary()) -> {'ok', cowboy_req:req(), state()}.
+last_resort(#state{filename=Filename
+                  ,media=#media_store_path{att=Attachment
+                                          ,id=Id
+                                          ,db=Db
+                                          }
+                  }=State
+           ,Req
+           ,<<"local file">>
+           ) ->
+    DbId = kzs_util:format_account_modb(Db, 'raw'),
+    AccountId = kzs_util:format_account_id(Db),
+    SrcFile = Filename,
+    DstDir = ?RETRY_TMPDIR,
+    DestFilename = <<DbId/binary, "_", Id/binary, "_",Attachment/binary>>,
+    DstFile = filename:join([DstDir, DestFilename]),
+    lager:debug("saving ~s for ~s(~s) locally as last resort to ~s", [Attachment, Id, Db, DstFile]),
+    maybe_send_system_alert(AccountId, Attachment, Id, Db),
+    case file:copy(SrcFile, DstFile) of
+        {'ok', _} -> {'ok', last_resort_success(Req), State};
+        {'error', _Reason} ->
+            lager:warning("failed to copy file ~s to a temporary place: ~p", [Attachment,_Reason]),
+            {'ok', last_resort_failure(Req), State}
+    end;
+last_resort(#state{media=Path}=State, Req, Method) ->
+    Attachment = Path#media_store_path.att,
+    Id = Path#media_store_path.id,
+    Db = Path#media_store_path.db,
+    lager:warning("saving ~s for ~s(~s) locally as last resort using method ~s NOT supported", [Attachment, Id, Db, Method]),
+    {'ok', last_resort_failure(Req), State}.
+
+-spec last_resort_success(cowboy_req:req()) -> cowboy_req:req().
+last_resort_success(Req0) ->
+    Body = io_lib:format("~s~n", [kz_json:encode(kz_json:set_value(<<"ok">>, 'true', kz_json:new()))]),
+    Req1 = cowboy_req:set_resp_body(Body, Req0),
+    lager:info("replying with 200 to last resort attempt"),
+    cowboy_req:reply(200, Req1).
+
+-spec last_resort_failure(cowboy_req:req()) -> cowboy_req:req().
+last_resort_failure(Req0) ->
+    Body = io_lib:format("~s~n", [kz_json:encode(kz_json:set_value(<<"ok">>, 'false', kz_json:new()))]),
+    Req1 = cowboy_req:set_resp_body(Body, Req0),
+    lager:info("replying with 500 error to last resort attempt"),
+    cowboy_req:reply(500, Req1).
+
+-spec maybe_send_system_alert(kz_term:api_ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
+maybe_send_system_alert(AccountId, Attachment, Id, Db) ->
+    case kzd_accounts:fetch(AccountId) of
+        {'ok', AccountJObj} -> maybe_send_system_alert(AccountId, AccountJObj, Attachment, Id, Db);
+        _E -> 'ok'
+    end.
+
+-spec maybe_send_system_alert(kz_term:api_ne_binary(), kzd_accounts:doc(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
+maybe_send_system_alert(AccountId, AccountJObj, Attachment, Id, Db) ->
+    case kzd_accounts:notifications_media_proxy_fail_alert_enabled(AccountJObj) of
+        'true' -> maybe_send_daily_system_alert(AccountId, AccountJObj, Attachment, Id, Db);
+        _ -> 'ok'
+    end.
+
+-spec maybe_send_daily_system_alert(kz_term:api_ne_binary(), kzd_accounts:doc(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
+maybe_send_daily_system_alert(AccountId, AccountJObj, Attachment, Id, Db) ->
+    Now = kz_time:now_ms(),
+    LastNotificationSeconds = kzd_accounts:notifications_media_proxy_fail_alert_last_notification(AccountJObj),
+    case LastNotificationSeconds == 'undefined'
+        orelse Now - LastNotificationSeconds > ?SECONDS_IN_DAY of
+        'true' ->
+            lager:warning("sending system notify email about failed upload ~s for ~s(~s) for account id ~s",
+                          [Attachment, Id, Db, AccountId]),
+            send_daily_system_alert(AccountId, Attachment, Id, Db),
+            UpdatedJObj = kzd_accounts:set_notifications_media_proxy_fail_alert_last_notification(AccountJObj, Now),
+            kzd_accounts:save(UpdatedJObj);
+        _ ->
+            lager:info("media proxy alert was already sent today for account id ~s", [AccountId]),
+            'ok'
+    end.
+
+-spec send_daily_system_alert(kz_term:api_ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
+send_daily_system_alert(AccountId, Attachment, Id, Db) ->
+    Subject = <<"Media proxy upload failed">>,
+    Message = kz_binary:format("Uploading ~s onto ~s(~s) failed", [Attachment, Id, Db]),
+    Prop = props:filter_undefined([{<<"Subject">>, kz_binary:format("System Alert: ~s", [Subject])}
+                                  ,{<<"Message">>, Message}
+                                  ,{<<"Account-ID">>, AccountId}
+                                  | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+                                  ]),
+    _ = kz_amqp_worker:cast(Prop, fun kapi_notifications:publish_system_alert/1),
+    'ok'.
