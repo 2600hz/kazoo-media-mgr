@@ -32,7 +32,7 @@
 
 -spec init(cowboy_req:req(), kz_term:proplist()) -> handler_return().
 init(Req, _Opts) ->
-    process_flag(trap_exit, true),
+    process_flag('trap_exit', 'true'),
     kz_log:put_callid(kz_binary:rand_hex(16)),
     check_authn(Req, authenticate(Req)).
 
