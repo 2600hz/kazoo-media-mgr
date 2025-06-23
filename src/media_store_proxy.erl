@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Handles storage proxy requests for media binaries
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
