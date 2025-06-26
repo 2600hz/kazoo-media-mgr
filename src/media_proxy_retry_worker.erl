@@ -49,6 +49,8 @@
 
 -define(NUM_OF_RETRIES, ?RETRY_ATTEMPTS - 1). % 1 initial attempt followed by N retries
 
+-define(AUDIO_REGEX, "^([^_]+)_([^_]+)_([^\\.]+)\\.(mp3|wav|ogg|flac|aac|m4a|wma)$").
+
 %%%=============================================================================
 %%% API
 %%%=============================================================================
@@ -179,9 +181,8 @@ scanner_loop(Interval) ->
 -spec scan_jobs(kz_term:ne_binary()) -> 'ok'.
 scan_jobs(Dir) ->
     case get_retry_jobs(Dir) of
-        [] -> 'ok';
-        Jobs ->
-            gen_server:cast(?SERVER, {'discovered_jobs', Jobs})
+        [] -> lager:debug("scanning completed with no new jobs");
+        Jobs -> gen_server:cast(?SERVER, {'discovered_jobs', Jobs})
     end.
 
 -spec get_retry_jobs(kz_term:ne_binary()) -> jobs().
@@ -190,15 +191,22 @@ get_retry_jobs(Dir) ->
 
 -spec get_retry_jobs(kz_term:ne_binary(), kz_term:ne_binary()) -> jobs().
 get_retry_jobs(Dir, <<"local file">>) ->
-    Wildcard = filename:join([Dir, "*"]), % /my_tmp/{MODB}_{DOCID}_{Name.mp3}
-    Files = filelib:wildcard(kz_term:to_list(Wildcard)),
-    get_retry_jobs_from_files(Files);
+    {'ok', Regex} = re:compile(?AUDIO_REGEX, ['caseless']),
+    Wildcard = filename:join([Dir, "*_*_*.*"]), % /tmp/{MODB}_{DOCID}_{Name.mp3}
+
+    [get_retry_job_from_file(File)
+     || File <- filelib:wildcard(kz_term:to_list(Wildcard)),
+        does_file_match(File, Regex)
+    ];
 get_retry_jobs(_Map, _Method) ->
     lager:warning("media proxy retry method ~p is not supported", [_Method]).
 
--spec get_retry_jobs_from_files([file:filename_all()]) -> jobs().
-get_retry_jobs_from_files(Files) ->
-    [get_retry_job_from_file(File) || File <- Files].
+-spec does_file_match(file:filename_all(), re:mp()) -> boolean().
+does_file_match(File, Regex) ->
+    case re:run(File, Regex) of
+        {'match', _} -> 'true';
+        'nomatch' -> 'false'
+    end.
 
 -spec get_retry_job_from_file(file:filename_all()) -> job().
 get_retry_job_from_file(File) ->
