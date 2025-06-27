@@ -194,35 +194,35 @@ get_retry_jobs(Dir) ->
 
 -spec get_retry_jobs(kz_term:ne_binary(), kz_term:ne_binary()) -> jobs().
 get_retry_jobs(Dir, <<"local file">>) ->
-    {'ok', CompiledRE} = re:compile(?AUDIO_REGEX, ['caseless']),
-
+    {'ok', Regex} = re:compile(?AUDIO_REGEX, ['caseless']),
     Wildcard = filename:join([Dir, "*_*_*.*"]), % /tmp/{MODB}_{DOCID}_{Name.mp3}
     Candidates = filelib:wildcard(kz_term:to_list(Wildcard)),
-
-    lists:filtermap(fun(Filepath) ->
-                            case re:run(filename:basename(Filepath), CompiledRE,
-                                        [{'capture', 'all_but_first', 'binary'}]) of
-                                {'match', [MoDb, DocId, Attachment, _Ext]} ->
-                                    lager:debug("queueing new media retry job ~s for ~s(~s)"
-                                               ,[Attachment
-                                                ,DocId
-                                                ,kzs_util:format_account_modb(MoDb, 'encoded')
-                                                ]),
-                                    NewJob = #job{doc_id = DocId
-                                                 ,attachment = Attachment
-                                                 ,modb_id = MoDb
-                                                 ,filepath = Filepath
-                                                 ,retry_count = 0
-                                                 },
-                                    {'true', NewJob};
-                                'nomatch' ->
-                                    'false'
-                            end
-                    end
-                   ,Candidates
-                   );
+    [get_retry_job_from_file(File) || File <- Candidates, does_file_match(File, Regex)];
 get_retry_jobs(_Map, _Method) ->
     lager:warning("media proxy retry method ~p is not supported", [_Method]).
+
+-spec does_file_match(file:filename_all(), re:mp()) -> boolean().
+does_file_match(File, Regex) ->
+    case re:run(File, Regex) of
+        {'match', _} -> 'true';
+        'nomatch' -> 'false'
+    end.
+
+-spec get_retry_job_from_file(file:filename_all()) -> job().
+get_retry_job_from_file(File) ->
+    Filename = kz_term:to_binary(filename:basename(File)),
+    [MoDb, DocId, Attachment] = binary:split(Filename, <<"_">>, ['global']),
+    lager:debug("queueing new media retry job ~s for ~s(~s)"
+               ,[Attachment
+                ,DocId
+                ,kzs_util:format_account_modb(MoDb, 'encoded')
+                ]),
+    #job{doc_id = DocId
+        ,attachment = Attachment
+        ,modb_id = MoDb
+        ,filepath = File
+        ,retry_count = 0
+        }.
 
 -spec schedule_jobs(jobs(), state()) -> state().
 schedule_jobs(Jobs, State) ->
