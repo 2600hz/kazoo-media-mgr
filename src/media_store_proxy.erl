@@ -199,7 +199,15 @@ setup_context(Req, #media_store_path{att=Attachment}=Path) ->
                           ,filename=Filename
                           ,file=IODevice
                           },
-            handle(Req, State);
+            try
+                handle(Req, State)
+            catch
+                _:Reason ->
+                    %% clean up immediately if fails
+                    lager:debug("error ~p handling file ~s", [Reason, Filename]),
+                    cleanup_resources(IODevice, Filename),
+                    reply_error(500, Req)
+            end;
         {'error', Reason} ->
             lager:debug("error ~p opening file ~s", [Reason, Filename]),
             reply_error(500, Req)
@@ -330,11 +338,16 @@ reply_error(Code, Req) ->
 
 -spec terminate(any(), cowboy_req:req(), any()) -> 'ok'.
 terminate(_Reason, _Req, #state{file=Device, filename=Filename}) ->
-    catch(file:close(Device)),
-    catch(file:delete(Filename)),
+    cleanup_resources(Device, Filename),
     lager:debug("closed files and terminated handler: ~p", [_Reason]);
 terminate(_Reason, _Req, _) ->
-    lager:debug("terminating handler: ~p", [_Reason]).
+    lager:debug("init failed - no resources to clean, terminating handler: ~p", [_Reason]).
+
+-spec cleanup_resources(file:io_device(), binary()) -> 'ok'.
+cleanup_resources(Device, Filename) ->
+    catch(file:close(Device)),
+    catch(file:delete(Filename)),
+    lager:debug("cleaned up: ~p", [Filename]).
 
 -spec maybe_request_transcribe(binary(), state()) -> 'ok'.
 maybe_request_transcribe(IOData, #state{media = Path}) ->
